@@ -8,11 +8,13 @@
   "scripts": {
     "demo": "node run-demo.js",
     "test:connector": "node test-connector.js",
+    "test:adapter": "node test-adapter.js",
     "connector": "node src/server.js",
     "web": "node src/webServer.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@smartspectra/node-sdk": "^3.5.0",
     "zod": "^3.23.8"
   },
   "license": "UNLICENSED"
