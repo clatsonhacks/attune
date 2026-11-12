@@ -5,6 +5,9 @@
  */
 const { createMockAdapter } = require('./mock');
 
+// Pick up SMARTSPECTRA_API_KEY / ATTUNE_ADAPTER from a local .env if present (never committed).
+try { process.loadEnvFile(); } catch {}
+
 function createAdapter(opts = {}) {
   if ((process.env.ATTUNE_ADAPTER || 'mock').toLowerCase() === 'smartspectra') {
     const { createSmartSpectraAdapter } = require('./smartspectra');
