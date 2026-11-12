@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="meadow">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Attune</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400&family=Space+Grotesk:wght@400;500;600;700&family=Poppins:wght@400;500;600&family=DM+Serif+Display&family=Nunito:wght@400;600;700;800&family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="meadow">
+  <div class="bg" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- Onboarding -->
+  <div id="onboard" class="onboard">
+    <div class="onboard-card">
+      <div class="eyebrow">Attune</div>
+      <h2>How do you want this to feel?</h2>
+      <p class="sub">Pick a vibe. We build the palette and typography, and the glass takes on its color.</p>
+      <div class="vibes">
+        <button class="vibe" data-pick="meadow"><span class="sw sw-meadow"></span><b>Meadow</b><small>calm · sage</small></button>
+        <button class="vibe" data-pick="midnight"><span class="sw sw-midnight"></span><b>Midnight</b><small>focus · blue</small></button>
+        <button class="vibe" data-pick="sunset"><span class="sw sw-sunset"></span><b>Sunset</b><small>warm · coral</small></button>
+        <button class="vibe" data-pick="lavender"><span class="sw sw-lavender"></span><b>Lavender</b><small>soft · dusk</small></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar glass">
+      <div class="side-brand"><span class="logo"></span><span class="name">Attune</span></div>
+      <nav class="nav">
+        <button class="navitem active" data-view="home"><span class="ni-ico">◉</span>Companion</button>
+        <button class="navitem" data-view="memory"><span class="ni-ico">▦</span>Memory</button>
+        <button class="navitem" data-view="connectors"><span class="ni-ico">⚇</span>Connectors</button>
+      </nav>
+      <div class="side-foot"><span class="pill soft">local-only</span><span class="pill soft">non-medical</span></div>
+    </aside>
+
+    <!-- Content -->
+    <main class="content">
+      <header class="topbar">
+        <div class="htitle" id="htitle">Companion</div>
+        <div class="controls">
+          <button id="themeBtn" class="pill">vibe</button>
+          <label class="switch" title="Private — don't store any memory for this conversation">
+            <input type="checkbox" id="incognito" /><span class="track"></span><em>Private</em>
+          </label>
+        </div>
+      </header>
+
+      <!-- HOME -->
+      <section class="view" id="view-home">
+        <div class="stage">
+          <section class="presence glass">
+            <div class="orb-wrap">
+              <div class="mascot greeting" id="mascot" data-state="neutral">
+                <span class="aura"></span>
+                <svg class="muse" viewBox="0 0 220 252" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <radialGradient id="body" cx="40%" cy="32%" r="75%">
+                      <stop offset="0%" stop-color="#f6f0e6"/><stop offset="70%" stop-color="#ece3d4"/><stop offset="100%" stop-color="#ddd0bc"/>
+                    </radialGradient>
+                    <radialGradient id="face" cx="45%" cy="38%" r="70%">
+                      <stop offset="0%" stop-color="#fcf1e2"/><stop offset="100%" stop-color="#f1dcc2"/>
+                    </radialGradient>
+                  </defs>
+                  <!-- feet + arms + body -->
+                  <ellipse cx="84" cy="236" rx="24" ry="13" fill="#ddd0bc"/>
+                  <ellipse cx="140" cy="236" rx="24" ry="13" fill="#ddd0bc"/>
+                  <ellipse cx="30" cy="166" rx="17" ry="30" fill="url(#body)" transform="rotate(16 30 166)"/>
+                  <g class="wave"><ellipse cx="197" cy="96" rx="15" ry="31" fill="url(#body)" transform="rotate(26 197 96)"/></g>
+                  <ellipse cx="110" cy="146" rx="90" ry="100" fill="url(#body)"/>
+                  <ellipse cx="110" cy="112" rx="55" ry="51" fill="url(#face)"/>
+                  <!-- HAPPY (calm) -->
+                  <g class="exp exp-happy" fill="none" stroke="#4a3b32" stroke-width="4.5" stroke-linecap="round">
+                    <path d="M84 110 q10 -12 20 0"/><path d="M116 110 q10 -12 20 0"/>
+                    <path d="M97 120 Q110 141 123 120 Q110 131 97 120 Z" fill="#7c3f30" stroke="none"/>
+                    <circle cx="79" cy="123" r="8" fill="#f2a9a0" stroke="none" opacity=".55"/>
+                    <circle cx="141" cy="123" r="8" fill="#f2a9a0" stroke="none" opacity=".55"/>
+                  </g>
+                  <!-- CONCERN (elevated — caring) -->
+                  <g class="exp exp-concern">
+                    <path d="M82 98 q11 -7 21 -2" fill="none" stroke="#4a3b32" stroke-width="3" stroke-linecap="round"/>
+                    <path d="M117 96 q11 -5 21 2" fill="none" stroke="#4a3b32" stroke-width="3" stroke-linecap="round"/>
+                    <ellipse cx="94" cy="113" rx="5.5" ry="7" fill="#4a3b32"/><ellipse cx="126" cy="113" rx="5.5" ry="7" fill="#4a3b32"/>
+                    <circle cx="96" cy="110" r="1.8" fill="#fff"/><circle cx="128" cy="110" r="1.8" fill="#fff"/>
+                    <ellipse cx="110" cy="127" rx="7" ry="5.5" fill="#7c3f30"/>
+                    <circle cx="80" cy="124" r="7.5" fill="#f2a9a0" opacity=".5"/><circle cx="140" cy="124" r="7.5" fill="#f2a9a0" opacity=".5"/>
+                  </g>
+                  <!-- REST (tuning in / waiting) -->
+                  <g class="exp exp-rest" fill="none" stroke="#4a3b32" stroke-width="4" stroke-linecap="round">
+                    <path d="M86 113 q9 7 18 0"/><path d="M116 113 q9 7 18 0"/>
+                    <path d="M101 125 q9 5 18 0"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+            <div class="readout">
+              <div class="state-word" id="state">connecting</div>
+              <div class="sub"><span id="pulse">—</span> <small>bpm</small> · <span id="confLabel">signal —</span></div>
+            </div>
+            <div class="signals" id="signals"></div>
+            <div class="signal-detail" id="signalDetail" hidden></div>
+            <div class="nudge" id="nudgeBox" hidden>
+              <div class="nudge-label">whisper to the AI</div>
+              <div id="directive"></div>
+              <div class="evidence" id="evidence"></div>
+            </div>
+            <button id="consentBtn" class="cta">Grant consent to sense</button>
+            <p class="fineprint">Only interpreted signals — never raw video or vitals — are shared, and only after you consent.</p>
+          </section>
+
+          <section class="conversation glass">
+            <div class="conv-head"><span>Companion</span></div>
+            <div id="log" class="log"></div>
+            <form id="chatForm" class="composer">
+              <input id="msg" autocomplete="off" placeholder="Say something…" />
+              <button type="submit" aria-label="send">↑</button>
+            </form>
+            <p class="hint">Wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
+          </section>
+        </div>
+      </section>
+
+      <!-- MEMORY (calendar) -->
+      <section class="view" id="view-memory" hidden>
+        <div class="memory-grid">
+          <div class="memory-cal glass">
+            <div class="cal-head">
+              <button id="calPrev" class="navbtn">‹</button>
+              <b id="calTitle">—</b>
+              <button id="calNext" class="navbtn">›</button>
+              <button id="forgetAll" class="mini danger">forget all</button>
+            </div>
+            <div class="cal-dow"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
+            <div class="cal-grid" id="calGrid"></div>
+            <p class="fineprint" id="privNote" hidden>Private mode is on — nothing new is being stored.</p>
+          </div>
+          <div class="day-detail glass" id="dayDetail"><div class="dd-empty">Select a day to see what Attune remembered — interpretations only, never raw video or vitals.</div></div>
+        </div>
+      </section>
+
+      <!-- CONNECTORS -->
+      <section class="view" id="view-connectors" hidden>
+        <div class="connectors glass">
+          <div class="conn-head"><b>Connected platforms</b><span>Attune shares interpreted body-context with the AI you link — never raw video or vitals.</span></div>
+          <div id="connList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
