@@ -11,6 +11,7 @@ npm install
 npm run web             # ⭐ self-contained demo UI at http://localhost:3000 (HUD + companion chat)
 npm run demo            # interpreter on synthetic vitals (prints the nudges)
 npm run test:connector  # headless test of the connector brain (memory + session + consent loop)
+npm run test:adapter    # SmartSpectra mapping vs the SDK's protobuf schema
 ```
 **The web demo** (`npm run web`) is the "basic version": grant consent, watch the state cycle
 calm→stress→recovery on the left, then say "I'm fine" while it shows **elevated** — the companion catches the
@@ -18,7 +19,7 @@ gap. Runs on mock vitals + a mock companion (no credentials). Set `ATTUNE_ANTHRO
 
 ## Run the MCP connector
 ```bash
-npm run connector       # starts the stdio MCP server (mock adapter by default)
+npm run connector       # starts the stdio MCP server (mock adapter by default; ATTUNE_ADAPTER=smartspectra for the real SDK)
 ```
 It starts un-consented: `get_body_context` returns `consent_required` until an AI calls `grant_consent({allow:true})`.
 
@@ -43,21 +44,21 @@ before replying — see `SKILL.md` for the usage contract.
 - `src/memory.js` — local-first store (interpretations only; encryption is M5).
 - `src/adapter/mock.js` — synthetic stream · `src/adapter/smartspectra.js` — real SDK adapter.
 - `src/server.js` — the MCP connector · `SKILL.md` — how an AI uses it.
-- `run-demo.js` · `test-connector.js` — runnable checks.
+- `run-demo.js` · `test-connector.js` · `test-adapter.js` — runnable checks.
 
-## Wire the real SmartSpectra SDK
-The mock is swapped via one env var; no code change to the app:
+## Use the real SmartSpectra SDK
+`@smartspectra/node-sdk` is already a dependency (prebuilt native runtime for win32-x64, darwin-arm64,
+linux-x64/arm64; Node >= 20). Switch adapters with one env var, no code change:
 ```bash
-npm i @smartspectra/node-sdk          # native SDK; needs a webcam + smartspectra.presagetech.com reachable
-export SMARTSPECTRA_API_KEY=...        # dev registration (keep in .env, never commit)
-export ATTUNE_ADAPTER=smartspectra
-npm run web                           # or: npm run connector
+cp .env.example .env          # then set SMARTSPECTRA_API_KEY (from physiology.presagetech.com)
+                              # and ATTUNE_ADAPTER=smartspectra
+npm run web                   # or: npm run connector
 ```
-`src/adapter/smartspectra.js` maps SDK metrics → our sample shape (pulse + expression + talking; no live
-HRV/breathing; `enableTelemetry=false`). ⚠️ It's written from the docs and **marked to verify on your machine** —
-confirm the exact `configure/onMetrics/decodeMetrics` names against your installed version (the mapping is the
-stable part). Unit-test the mapping with real `decodeMetrics` output via the exported `mapMetrics`.
+`src/adapter/smartspectra.js` creates a `SmartSpectraSDK` on the default webcam, requests pulse rate,
+expressions, talking and blinking (telemetry off), and maps each decoded `Metrics` packet to our sample
+shape (`cardio.pulseRate`, `face.expression`, `face.talking`; confidence 0–100 → 0–1). No live
+HRV/breathing. `npm run test:adapter` checks the mapping against the SDK's own protobuf decoder.
 
 ## Status
-Interpreter ✅ · connector brain ✅ · MCP server ✅ · real SmartSpectra adapter (needs API key + webcam) ·
+Interpreter ✅ · connector brain ✅ · MCP server ✅ · real SmartSpectra adapter ✅ (live run needs API key + webcam) ·
 next: encryption at rest, consent UX polish.
