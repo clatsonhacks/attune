@@ -1,11 +1,10 @@
 'use strict';
 /*
- * Attune — self-contained demo backend (no camera, no credentials).
- * Feeds the mock vitals stream through the session and serves a small web UI + JSON API so the
- * whole signal→nudge→companion loop is visible in a browser. Swap the mock adapter for the real
- * SmartSpectra adapter and the mock companion for a real LLM when you move this to its own repo.
+ * Attune — demo backend. Feeds the vitals stream (mock by default, or the real SmartSpectra SDK with
+ * ATTUNE_ADAPTER=smartspectra) through the session and serves a small web UI + JSON API so the
+ * whole signal→nudge→companion loop is visible in a browser.
  *
- * Run: npm run web   (PORT env optional, default 3000)
+ * Run: npm run web   (PORT env optional, default 3000; settings can live in .env)
  */
 const http = require('http');
 const fs = require('fs');
@@ -32,10 +31,23 @@ const connectors = [
 
 let consent = false;
 let lastSample = null;
-adapter.start((sample) => {
-  lastSample = sample;
-  session.ingest(sample);
-});
+try {
+  adapter.start((sample) => {
+    lastSample = sample;
+    session.ingest(sample);
+  });
+} catch (e) {
+  process.stderr.write(`[attune] could not start the ${adapter.name} adapter: ${e.message}
+`);
+  process.exit(1);
+}
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, async () => {
+    await adapter.stop();
+    process.exit(0);
+  });
+}
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 
@@ -117,5 +129,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  process.stdout.write(`[attune] demo UI on http://localhost:${PORT}  (mock vitals; consent required)\n`);
+  process.stdout.write(`[attune] demo UI on http://localhost:${PORT}  (adapter: ${adapter.name}; consent required)\n`);
 });

@@ -25,7 +25,7 @@ async function main() {
   const memory = createMemory();
   const session = createSession({ memory });
   const adapter = createAdapter(); // mock by default; ATTUNE_ADAPTER=smartspectra for the real SDK
-  adapter.start((sample) => session.ingest(sample));
+  adapter.start((sample) => session.ingest(sample)); // throws with a clear message if the SDK can't start
 
   let consented = false;
   const text = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
@@ -95,7 +95,7 @@ async function main() {
   );
 
   await server.connect(new StdioServerTransport());
-  process.stderr.write('[attune-sense] MCP connector running on stdio (adapter: mock). Consent required before body-context is shared.\n');
+  process.stderr.write(`[attune-sense] MCP connector running on stdio (adapter: ${adapter.name}). Consent required before body-context is shared.\n`);
 }
 
 main().catch((e) => {
