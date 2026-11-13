@@ -107,10 +107,22 @@ let lastSignals = [], selectedSignal = null;
 function renderSignals(sigs) {
   lastSignals = sigs || [];
   const c = $('signals');
-  if (!lastSignals.length) { c.innerHTML = ''; $('signalDetail').hidden = true; updateSlot(); return; }
-  c.innerHTML = lastSignals.map((s) =>
-    `<button class="sig ${s.status}${s.id === selectedSignal ? ' sel' : ''}" data-id="${s.id}"><span class="shead">${icon(s.id, 'sm')}<b>${s.label}</b><span class="sdot"></span></span><span class="sval">${s.value}</span></button>`
-  ).join('');
+  if (!lastSignals.length) { c.innerHTML = ''; c.dataset.ids = ''; $('signalDetail').hidden = true; updateSlot(); return; }
+  // Build the tiles once, then only patch text/classes so icons and dot animations don't restart every poll.
+  const ids = lastSignals.map((s) => s.id).join(',');
+  if (c.dataset.ids !== ids) {
+    c.dataset.ids = ids;
+    c.innerHTML = lastSignals.map((s) =>
+      `<button class="sig" data-id="${s.id}"><span class="shead">${icon(s.id, 'sm')}<b>${s.label}</b><span class="sdot"></span></span><span class="sval"></span></button>`
+    ).join('');
+  }
+  lastSignals.forEach((s) => {
+    const el = c.querySelector(`.sig[data-id="${s.id}"]`);
+    const cls = `sig ${s.status}${s.id === selectedSignal ? ' sel' : ''}`;
+    if (el.className !== cls) el.className = cls;
+    const v = el.querySelector('.sval');
+    if (v.textContent !== s.value) v.textContent = s.value;
+  });
   if (selectedSignal) { const a = lastSignals.find((x) => x.id === selectedSignal); a ? showDetail(a) : ($('signalDetail').hidden = true); }
 }
 function updateSlot() {
