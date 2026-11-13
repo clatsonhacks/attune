@@ -108,7 +108,14 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
           onSample(LOW_CONFIDENCE()); // decode failure → interpreter goes "unclear"
         }
       });
-      sdk.on('validationStatus', (code, _ts, hint) => { if (code) log(`validation ${code}: ${hint}`); });
+      // A non-zero validation code (e.g. "No face found") means no metrics will arrive, so feed the
+      // interpreter low-confidence samples → state "unclear". Log only when the status changes.
+      let lastValidation = 0;
+      sdk.on('validationStatus', (code, _ts, hint) => {
+        if (code !== lastValidation) log(code ? `validation ${code}: ${hint}` : 'validation ok: face found');
+        lastValidation = code;
+        if (code) onSample(LOW_CONFIDENCE());
+      });
       sdk.on('processingStatus', (status) => log(`processing status ${status}`));
       sdk.on('error', (code, message, retryable) => {
         log(`SmartSpectra error ${code}: ${message}${retryable ? ' (retryable)' : ''}`);
