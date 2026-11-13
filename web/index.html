@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="meadow">
+<html lang="en" data-mood="calm">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -9,35 +9,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body data-theme="meadow">
+<body>
   <div class="bg" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>
-
-  <!-- Onboarding -->
-  <div id="onboard" class="onboard">
-    <div class="onboard-card">
-      <div class="eyebrow">Attune</div>
-      <h2>How do you want this to feel?</h2>
-      <p class="sub">Pick a vibe. We build the palette, and the glass takes on its color.</p>
-      <div class="vibes">
-        <button class="vibe" data-pick="meadow"><span class="sw sw-meadow"></span><b>Meadow</b><small>calm · sage</small></button>
-        <button class="vibe" data-pick="midnight"><span class="sw sw-midnight"></span><b>Midnight</b><small>focus · blue</small></button>
-        <button class="vibe" data-pick="sunset"><span class="sw sw-sunset"></span><b>Sunset</b><small>warm · coral</small></button>
-        <button class="vibe" data-pick="lavender"><span class="sw sw-lavender"></span><b>Lavender</b><small>soft · dusk</small></button>
-      </div>
-    </div>
-  </div>
 
   <div class="app">
     <!-- Sidebar -->
     <aside class="sidebar glass">
       <div class="side-brand"><span class="logo"></span><span class="name">Attune</span></div>
       <nav class="nav">
-        <button class="navitem active" data-view="home"><span class="ni-ico">◉</span>Companion</button>
-        <button class="navitem" data-view="memory"><span class="ni-ico">▦</span>Memory</button>
-        <button class="navitem" data-view="connectors"><span class="ni-ico">⚇</span>Connectors</button>
+        <button class="navitem active" data-view="home"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Companion</button>
+        <button class="navitem" data-view="memory"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-memory"/></svg>Memory</button>
+        <button class="navitem" data-view="connectors"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-connectors"/></svg>Connectors</button>
       </nav>
-      <div class="side-foot"><span class="pill soft">local-only</span><span class="pill soft">non-medical</span></div>
+      <div class="side-foot"><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>local-only</span><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-pulse"/></svg>non-medical</span></div>
     </aside>
 
     <!-- Content -->
@@ -45,9 +30,9 @@
       <header class="topbar">
         <div class="htitle" id="htitle">Companion</div>
         <div class="controls">
-          <button id="themeBtn" class="pill">vibe</button>
+          <span id="moodPill" class="pill mood-pill" title="Colors follow the mood of the conversation"><span class="mdot"></span><span id="moodName">calm</span></span>
           <label class="switch" title="Private — don't store any memory for this conversation">
-            <input type="checkbox" id="incognito" /><span class="track"></span><em>Private</em>
+            <input type="checkbox" id="incognito" /><span class="track"></span><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg><em>Private</em>
           </label>
         </div>
       </header>
@@ -104,13 +89,16 @@
               <div class="sub"><span id="pulse">—</span> <small>bpm</small> · <span id="confLabel">signal —</span></div>
             </div>
             <div class="signals" id="signals"></div>
-            <div class="signal-detail" id="signalDetail" hidden></div>
-            <div class="nudge" id="nudgeBox" hidden>
-              <div class="nudge-label">whisper to the AI</div>
-              <div id="directive"></div>
-              <div class="evidence" id="evidence"></div>
+            <div class="slot" id="slot">
+              <div class="slot-empty" id="slotEmpty">Tap a signal to see how it's read.</div>
+              <div class="signal-detail" id="signalDetail" hidden></div>
+              <div class="nudge" id="nudgeBox" hidden>
+                <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>whisper to the AI</div>
+                <div id="directive"></div>
+                <div class="evidence" id="evidence"></div>
+              </div>
             </div>
-            <button id="consentBtn" class="cta">Grant consent to sense</button>
+            <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Grant consent to sense</span></button>
             <p class="fineprint">Only interpreted signals — never raw video or vitals — are shared, and only after you consent.</p>
           </section>
 
@@ -119,7 +107,7 @@
             <div id="log" class="log"></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
-              <button type="submit" aria-label="send">↑</button>
+              <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
             </form>
             <p class="hint">Wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
           </section>
@@ -131,10 +119,10 @@
         <div class="memory-grid">
           <div class="memory-cal glass">
             <div class="cal-head">
-              <button id="calPrev" class="navbtn">‹</button>
+              <button id="calPrev" class="navbtn" aria-label="Previous month"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-prev"/></svg></button>
               <b id="calTitle">—</b>
-              <button id="calNext" class="navbtn">›</button>
-              <button id="forgetAll" class="mini danger">forget all</button>
+              <button id="calNext" class="navbtn" aria-label="Next month"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-next"/></svg></button>
+              <button id="forgetAll" class="mini danger"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-trash"/></svg>forget all</button>
             </div>
             <div class="cal-dow"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
             <div class="cal-grid" id="calGrid"></div>
