@@ -49,7 +49,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
