@@ -142,3 +142,20 @@ test('insights reach the human UI; the AI only gets a number-free note; chat nev
   if (last.note) assert.ok(!/\d|bpm/.test(last.note), last.note);
   assert.strictEqual((await api('/api/insight', {})).status, 429); // rate limited is reported, not hidden
 });
+
+test('UI libraries are served locally from an allowlist; style nonce is fresh per page', async (t) => {
+  const { port } = await boot(t);
+  const js = await request(port, { path: '/vendor/overlayscrollbars.js' });
+  assert.strictEqual(js.status, 200);
+  assert.match(js.headers['content-type'], /javascript/);
+  assert.strictEqual((await request(port, { path: '/vendor/overlayscrollbars.css' })).status, 200);
+  assert.strictEqual((await request(port, { path: '/vendor/../package.json' })).status, 404);
+  assert.strictEqual((await request(port, { path: '/vendor/other.js' })).status, 404);
+  const a = await request(port, { path: '/' });
+  const b = await request(port, { path: '/' });
+  const nonceOf = (r) => (r.body.match(/name="attune-style-nonce" content="([^"]+)"/) || [])[1];
+  assert.ok(nonceOf(a));
+  assert.notStrictEqual(nonceOf(a), nonceOf(b));
+  assert.ok(a.headers['content-security-policy'].includes(`'nonce-${nonceOf(a)}'`));
+  assert.ok(!/unsafe-inline/.test(a.headers['content-security-policy']));
+});
