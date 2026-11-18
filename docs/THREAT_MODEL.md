@@ -1,0 +1,19 @@
+# Attune — Threat model (v1, plan M0-02)
+
+Goal: no Attune-operated pathway to a user's camera, measurements, transcripts or memory, and no way for an
+AI or another app to turn sensing on. Not a claim that nobody can ever access anything.
+
+| Actor | Can try to | Current mitigation | Gap / plan item |
+|---|---|---|---|
+| Normal user | Misunderstand what is shared | Separate opt-ins, Presage disclosure in the dialog, AI-sharing off by default | Legal review of copy (plan §4) |
+| AI model (via chat or MCP) | Grant itself camera access, widen scope | No consent tool; MCP consent comes from the human's config; web consent only via token-protected UI API | Per-session capability tokens (M6-03) |
+| Malicious website | Call the localhost API (CSRF), DNS rebinding | `127.0.0.1` bind, Host allowlist, Origin check, per-boot token only in `index.html`, CSP `frame-ancestors 'none'` | Packaged app should use IPC instead of HTTP (M1-03) |
+| Untrusted MCP client | Read context without the user's consent | Returns `consent_required` without `ATTUNE_CONSENT`; context is number-free | Short-lived scoped tokens (M6-03) |
+| Other local OS user | Read memory file | None beyond OS file permissions; file is plaintext | Encrypted per-user store, DPAPI (M5-01) |
+| Hostile local process (same user) | Read the token/memory, talk to the API | Not defended — same-user code is out of scope for a prototype | SDK worker isolation (M1-04), encryption (M5) |
+| Late SDK callback | Deliver data after revoke | Generation counter drops it; tested | Device-disconnect/crash tests (M1-07) |
+| Cloud operator (Attune) | Inspect data | No Attune server exists in the flow | Keep it that way; review any relay (M6-06) |
+| SDK vendor (Presage) | Receive measurements | Disclosed; out of our control | Network audit (M1-06, M2-06) |
+| Hosted AI provider | Receive chat text + approved context | Only approved, number-free context; only with `aiSharing` | Provider disclosure UI (M4-06) |
+| Stolen laptop | Read memory | None (plaintext) | M5-01 |
+| Compromised update / admin / malware | Anything | Out of scope | Signed releases (M5-04) |
