@@ -10,17 +10,23 @@
  * Leaving error requires a fresh consent grant (revoke + grant), never a silent restart.
  */
 
-function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}, onStart, onStop, log = () => {}, insightMinIntervalMs = 30000 }) {
+/**
+ * autoStart: true  — the camera runs whenever the `sensing` scope is granted (MCP connector behaviour).
+ * autoStart: false — permission only: the camera starts when request() is called (chat started, AI asked),
+ *                    and pause()/idle stop it without touching consent. Revoking consent always stops it.
+ */
+function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}, onStart, onStop, log = () => {}, insightMinIntervalMs = 30000, autoStart = true }) {
   let lastInsightRequestAt = -Infinity;
   let adapter = null;
   let state = 'idle';
   let error = null;      // human-readable message
   let errorCode = null;  // machine code: start_failed | device_unavailable | worker_crashed | sdk_error
+  let camera = {};       // latest camera status: { validationCode, hint, processing, mode }
   let generation = 0;
   let pending = Promise.resolve();
 
   function status() {
-    return { state, error, errorCode, adapter: adapter ? adapter.name : null, generation };
+    return { state, error, errorCode, adapter: adapter ? adapter.name : null, generation, camera: { ...camera } };
   }
 
   function fail(gen, code, message) {
@@ -39,7 +45,7 @@ function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}
     if (state === 'starting' || state === 'active') return status();
     const gen = ++generation;
     state = 'starting';
-    error = null; errorCode = null;
+    error = null; errorCode = null; camera = {};
     try {
       adapter = adapterFactory();
       if (onStart) onStart(gen);
@@ -48,6 +54,7 @@ function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}
         {
           onInsight: (insight) => { if (gen === generation && state === 'active') onInsight(insight, gen); },
           onError: (e) => fail(gen, (e && e.code) || 'sdk_error', (e && e.message) || 'sensor error'),
+          onStatus: (st) => { if (gen === generation && st) camera = { ...camera, ...st }; },
         },
       );
       if (gen === generation && state === 'starting') state = 'active';
@@ -63,6 +70,7 @@ function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}
     const a = adapter;
     adapter = null;
     if (state !== 'error') state = 'stopped';
+    camera = {};
     if (a) {
       try { await a.stop(); } catch {}
       log(`sensing stopped (${reason})`);
@@ -75,9 +83,26 @@ function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}
   const unsubscribe = consent.onChange((next, prev) => {
     const want = next.sensing && next.presageAck;
     const had = prev.sensing && prev.presageAck;
-    if (want && !had) pending = pending.then(start);
+    if (want && !had && autoStart) pending = pending.then(start);
     else if (!want && had) pending = pending.then(() => stop('revoked'));
   });
+
+  /** Start the camera now if permission allows. Resolves to status(); never throws. */
+  function request(reason = 'requested') {
+    if (!consent.has('sensing')) return Promise.resolve(status());
+    pending = pending.then(async () => {
+      if (state === 'active' || state === 'starting' || !consent.has('sensing')) return;
+      log(`camera requested (${reason})`);
+      await start();
+    });
+    return pending.then(status);
+  }
+
+  /** Stop the camera but keep permission (pause, idle timeout). */
+  function release(reason = 'paused') {
+    pending = pending.then(() => (state === 'active' || state === 'starting' ? stop(reason) : null));
+    return pending.then(status);
+  }
 
   /** User-initiated Insight. Never awaited on a conversation path. Resolves to request id or null. */
   async function requestInsight(text) {
@@ -99,7 +124,7 @@ function createSensing({ adapterFactory, consent, onSample, onInsight = () => {}
     return pending.then(status);
   }
 
-  return { status, settled, shutdown, requestInsight };
+  return { status, settled, shutdown, requestInsight, request, release };
 }
 
 module.exports = { createSensing };
