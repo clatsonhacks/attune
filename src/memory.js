@@ -47,6 +47,14 @@ function createMemory(filePath = path.join(process.cwd(), '.attune-memory.json')
     },
 
     /** Seed a few past-dated sample days so the calendar isn't empty (demo only). */
+    /** Remove demo-seeded history (real mode must never show fake days). */
+    dropDemo() {
+      const before = data.sessions.length;
+      data.sessions = data.sessions.filter((s) => !s.demo);
+      if (data.sessions.length !== before || data.seeded) { delete data.seeded; _persist(); }
+      return before - data.sessions.length;
+    },
+
     seedDemo() {
       if (data.seeded) return;
       const DAY = 86400000, now = Date.now();
