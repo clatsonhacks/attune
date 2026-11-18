@@ -55,7 +55,8 @@ async function companionReply({ message, ctx }) {
     'You are a warm, concise companion. You receive a private body-context signal about the user. ' +
     (ctx && ctx.say && ctx.directive
       ? `Right now: ${ctx.directive} Be tentative and invite correction. Never mention numbers or diagnose.`
-      : 'No strong body signal right now; respond normally. Never mention numbers or diagnose.');
+      : 'No strong body signal right now; respond normally. Never mention numbers or diagnose.') +
+    (ctx && ctx.note ? ` Background from the sensor (may be wrong, do not quote it): ${ctx.note}` : '');
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

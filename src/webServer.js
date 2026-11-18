@@ -21,6 +21,9 @@ const { companionReply } = require('./companion');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
 const { createSensing } = require('./sensing');
+const { createCapabilities } = require('./privacy/capabilities');
+const { createContextBridge } = require('./contextBridge');
+const { normalizeInsight } = require('./insights/normalizer');
 
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -35,6 +38,10 @@ function createApp({
 } = {}) {
   const guard = createLocalGuard({ port });
   const consent = createConsent();
+  const capabilities = createCapabilities({ consent });
+  const bridge = createContextBridge({ capabilities });
+  consent.onChange(() => bridge.onConsentChange());
+  let companionCap = null;
   const adapterName = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase();
   const simulated = adapterName !== 'smartspectra';
 
@@ -49,12 +56,18 @@ function createApp({
     adapterFactory,
     consent,
     log,
-    onStart: () => {
+    onStart: (gen) => {
       lastSample = null;
       session = createSession({ memory: consent.has('memory') ? memory : null, simulatedSignals: simulated });
+      bridge.openSession(gen);
     },
-    onSample: (sample) => { lastSample = sample; session.ingest(sample); },
-    onStop: () => { lastSample = null; },
+    onSample: (sample, gen) => {
+      lastSample = sample;
+      session.ingest(sample);
+      bridge.update(session.getApprovedContext(), gen);
+    },
+    onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
+    onStop: () => { lastSample = null; bridge.closeSession(); },
   });
 
   consent.onChange((next) => memory.setMuted(!next.memory));
@@ -104,11 +117,11 @@ function createApp({
   function statePayload() {
     const c = consent.snapshot();
     const s = sensing.status();
-    const base = { consent: c, sensing: { state: s.state, error: s.error, adapter: adapterName, simulated } };
+    const base = { consent: c, sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated } };
     if (!sensingActive()) return { ...base, ...NO_CONTEXT, state: s.state === 'error' ? 'error' : c.sensing ? 'starting' : 'consent_required', pulseBpm: null, signals: [], evidence: [] };
     const ctx = session.getBodyContext();
     // Measurements are shown to the consenting human only; the AI path uses getApprovedContext().
-    return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals() };
+    return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), insight: bridge.getHumanView().insight };
   }
 
   async function handle(req, res) {
@@ -142,11 +155,21 @@ function createApp({
 
     if (method === 'POST' && url === '/api/chat') {
       const { message } = await readBody(req);
+      // Immediate cache read from the Context Bridge — never waits on the SDK or an Insight.
+      if (consent.has('aiSharing') && !capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
       const share = consent.has('aiSharing') && sensingActive();
-      const ctx = share ? session.getApprovedContext() : NO_CONTEXT;
+      const ctx = share ? bridge.getApprovedContext(companionCap) : NO_CONTEXT;
       const out = await reply({ message: String(message || '').slice(0, 4000), ctx });
       return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share });
     }
+    if (method === 'POST' && url === '/api/insight') {
+      // User-initiated Presage Insight. Returns at once; the answer arrives later via /api/state.
+      const { text } = await readBody(req);
+      const prompt = String(text || 'Provide a short, friendly check-in on how my readings look right now.').slice(0, 300);
+      const requestId = await sensing.requestInsight(prompt);
+      return sendJSON(res, requestId == null ? 429 : 202, { requestId, note: requestId == null ? 'not running or rate-limited (one request per 30 s)' : 'requested' });
+    }
+    if (method === 'GET' && url === '/api/bridge/stats') return sendJSON(res, 200, bridge.stats());
     if (method === 'POST' && url === '/api/correction') {
       const { wasAccurate } = await readBody(req);
       if (!sensingActive()) return sendJSON(res, 409, { error: 'sensing is not active' });
@@ -184,7 +207,7 @@ function createApp({
     await new Promise((r) => server.close(() => r()));
   }
 
-  return { server, consent, sensing, guard, close };
+  return { server, consent, sensing, guard, bridge, capabilities, close };
 }
 
 if (require.main === module) {

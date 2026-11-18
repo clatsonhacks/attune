@@ -21,6 +21,9 @@ const { createMemory } = require('./memory');
 const { createAdapter } = require('./adapter');
 const { createConsent, parseConsentString } = require('./privacy/consent');
 const { createSensing } = require('./sensing');
+const { createCapabilities } = require('./privacy/capabilities');
+const { createContextBridge } = require('./contextBridge');
+const { normalizeInsight } = require('./insights/normalizer');
 
 function createConnectorCore({
   consentString = process.env.ATTUNE_CONSENT,
@@ -32,15 +35,26 @@ function createConnectorCore({
   const requested = parseConsentString(consentString);
   const simulated = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase() !== 'smartspectra';
   const consent = createConsent();
+  const capabilities = createCapabilities({ consent });
+  const bridge = createContextBridge({ capabilities });
+  consent.onChange(() => bridge.onConsentChange());
   memory.setMuted(!requested.memory);
+  // Sharing/memory scopes come from the human's config; sensing is granted lazily on first request.
+  consent.grant({ aiSharing: requested.aiSharing, memory: requested.memory });
+  const cap = capabilities.issue({ scope: 'aiSharing', purpose: 'mcp-connector' });
 
   let session = createSession({ simulatedSignals: simulated });
   const sensing = createSensing({
     adapterFactory,
     consent,
     log,
-    onStart: () => { session = createSession({ memory: requested.memory ? memory : null, simulatedSignals: simulated }); },
-    onSample: (sample) => session.ingest(sample),
+    onStart: (gen) => {
+      session = createSession({ memory: requested.memory ? memory : null, simulatedSignals: simulated });
+      bridge.openSession(gen);
+    },
+    onSample: (sample, gen) => { session.ingest(sample); bridge.update(session.getApprovedContext(), gen); },
+    onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
+    onStop: () => bridge.closeSession(),
   });
 
   let idleTimer = null;
@@ -74,7 +88,8 @@ function createConnectorCore({
     }
     touch();
     if (sensing.status().state !== 'active') return { state: 'unavailable', say: false, error: sensing.status().error };
-    return session.getApprovedContext();
+    const ctx = bridge.getApprovedContext(cap); // immediate cache read
+    return ctx.state === 'off' ? { ...ctx, state: 'starting' } : ctx;
   }
 
   function recordCorrection({ wasAccurate }) {
@@ -98,7 +113,7 @@ function createConnectorCore({
     await sensing.shutdown();
   }
 
-  return { status, getBodyContext, recordCorrection, memoryGet, memoryAppend, forget: () => { memory.clear(); return { cleared: true }; }, shutdown, sensing };
+  return { bridge, status, getBodyContext, recordCorrection, memoryGet, memoryAppend, forget: () => { memory.clear(); return { cleared: true }; }, shutdown, sensing };
 }
 
 async function main() {
