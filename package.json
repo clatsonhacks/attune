@@ -15,7 +15,6 @@
     "web:demo": "node src/webServer.js --demo"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "1.10.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@smartspectra/node-sdk": "3.5.0",
     "protobufjs": "7.6.6",
