@@ -1,8 +1,13 @@
 'use strict';
 /*
- * Attune — demo backend. Feeds the vitals stream (mock by default, or the real SmartSpectra SDK with
- * ATTUNE_ADAPTER=smartspectra) through the session and serves a small web UI + JSON API so the
- * whole signal→nudge→companion loop is visible in a browser.
+ * Attune — local demo backend + web UI.
+ *
+ * Privacy boundary (see docs/DATA_FLOW.md):
+ *  - The sensor (mock, or the real SmartSpectra SDK with ATTUNE_ADAPTER=smartspectra) does NOT start at
+ *    boot. It starts only after the human grants the `sensing` scope (with the Presage disclosure
+ *    acknowledged) in the UI, and stops on revoke.
+ *  - Binds to 127.0.0.1 only; every /api call needs the per-boot session token (src/privacy/localGuard.js).
+ *  - The AI (companion) receives approved, number-free context only when the `aiSharing` scope is on.
  *
  * Run: npm run web   (PORT env optional, default 3000; settings can live in .env)
  */
@@ -13,121 +18,182 @@ const { createSession } = require('./session');
 const { createMemory } = require('./memory');
 const { createAdapter } = require('./adapter');
 const { companionReply } = require('./companion');
+const { createConsent } = require('./privacy/consent');
+const { createLocalGuard } = require('./privacy/localGuard');
+const { createSensing } = require('./sensing');
 
-const PORT = process.env.PORT || 3000;
 const WEB_DIR = path.join(__dirname, '..', 'web');
-
-const memory = createMemory();
-memory.seedDemo();
-const session = createSession({ memory });
-const adapter = createAdapter({ intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250 });
-
-// Demo connector states (which AI platforms are linked). In-process for the prototype.
-const connectors = [
-  { id: 'claude', name: 'Claude', desc: 'Desktop · MCP connector', connected: true },
-  { id: 'chatgpt', name: 'ChatGPT', desc: 'Desktop · MCP connector', connected: false },
-  { id: 'mcp', name: 'attune-sense (local MCP)', desc: 'This device · stdio', connected: true },
-];
-
-let consent = false;
-let lastSample = null;
-try {
-  adapter.start((sample) => {
-    lastSample = sample;
-    session.ingest(sample);
-  });
-} catch (e) {
-  process.stderr.write(`[attune] could not start the ${adapter.name} adapter: ${e.message}
-`);
-  process.exit(1);
-}
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
-    await adapter.stop();
-    process.exit(0);
-  });
-}
-
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+const NO_CONTEXT = { state: 'off', say: false, directive: null, suggestedUtterance: null, confidence: 0 };
 
-function sendJSON(res, code, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-  res.end(body);
+function createApp({
+  port = 3000,
+  adapterFactory = () => createAdapter({ intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250 }),
+  memory = createMemory(),
+  reply = companionReply,
+  log = (m) => process.stderr.write(`[attune] ${m}\n`),
+} = {}) {
+  const guard = createLocalGuard({ port });
+  const consent = createConsent();
+  const adapterName = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase();
+  const simulated = adapterName !== 'smartspectra';
+
+  // Memory writes only with the memory scope; demo history is seeded only in mock mode.
+  memory.setMuted(true);
+  if (simulated) memory.seedDemo();
+
+  let session = createSession({ simulatedSignals: simulated });
+  let lastSample = null;
+
+  const sensing = createSensing({
+    adapterFactory,
+    consent,
+    log,
+    onStart: () => {
+      lastSample = null;
+      session = createSession({ memory: consent.has('memory') ? memory : null, simulatedSignals: simulated });
+    },
+    onSample: (sample) => { lastSample = sample; session.ingest(sample); },
+    onStop: () => { lastSample = null; },
+  });
+
+  consent.onChange((next) => memory.setMuted(!next.memory));
+
+  // Connector entries are demo placeholders until real provider registration lands (plan M6-08).
+  const connectors = [
+    { id: 'claude', name: 'Claude', desc: 'Desktop · MCP connector (demo status)', connected: true },
+    { id: 'chatgpt', name: 'ChatGPT', desc: 'Desktop · MCP connector (demo status)', connected: false },
+    { id: 'mcp', name: 'attune-sense (local MCP)', desc: 'This device · stdio (demo status)', connected: true },
+  ];
+
+  const sensingActive = () => sensing.status().state === 'active';
+
+  function sendJSON(res, code, obj) {
+    const body = JSON.stringify(obj);
+    res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), 'cache-control': 'no-store' });
+    res.end(body);
+  }
+
+  function readBody(req) {
+    return new Promise((resolve) => {
+      let b = '';
+      req.on('data', (c) => { b += c; if (b.length > 64 * 1024) req.destroy(); });
+      req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); } });
+    });
+  }
+
+  function serveStatic(res, urlPath) {
+    const file = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+    const full = path.join(WEB_DIR, path.normalize(file).replace(/^(\.\.[/\\])+/, ''));
+    if (!full.startsWith(WEB_DIR)) return sendJSON(res, 403, { error: 'forbidden' });
+    fs.readFile(full, (err, data) => {
+      if (err) return sendJSON(res, 404, { error: 'not found' });
+      const headers = { 'content-type': MIME[path.extname(full)] || 'application/octet-stream', 'x-content-type-options': 'nosniff' };
+      if (full.endsWith('index.html')) {
+        // Hand the session token to our own page only; other origins can't read this response.
+        data = Buffer.from(String(data).replace('</head>', `  <meta name="attune-token" content="${guard.token}" />\n</head>`));
+        headers['cache-control'] = 'no-store';
+        headers['content-security-policy'] =
+          "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+      }
+      res.writeHead(200, headers);
+      res.end(data);
+    });
+  }
+
+  function statePayload() {
+    const c = consent.snapshot();
+    const s = sensing.status();
+    const base = { consent: c, sensing: { state: s.state, error: s.error, adapter: adapterName, simulated } };
+    if (!sensingActive()) return { ...base, ...NO_CONTEXT, state: s.state === 'error' ? 'error' : c.sensing ? 'starting' : 'consent_required', pulseBpm: null, signals: [], evidence: [] };
+    const ctx = session.getBodyContext();
+    // Measurements are shown to the consenting human only; the AI path uses getApprovedContext().
+    return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals() };
+  }
+
+  async function handle(req, res) {
+    const { method } = req;
+    const url = req.url.split('?')[0];
+    const isApi = url.startsWith('/api/');
+    const denied = guard.check(req, { requireToken: isApi });
+    if (denied) return sendJSON(res, denied.code, { error: denied.error });
+
+    if (method === 'GET' && url === '/api/state') return sendJSON(res, 200, statePayload());
+
+    if (method === 'POST' && url === '/api/consent') {
+      const body = await readBody(req);
+      try {
+        consent.grant({
+          sensing: body.sensing, presageAck: body.presageAck, aiSharing: body.aiSharing,
+          memory: body.memory, diagnostics: body.diagnostics,
+        });
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message, code: e.code });
+      }
+      await sensing.settled();
+      return sendJSON(res, 200, statePayload());
+    }
+    if (method === 'POST' && url === '/api/revoke') {
+      const { scopes } = await readBody(req);
+      consent.revoke(Array.isArray(scopes) ? scopes : undefined);
+      await sensing.settled();
+      return sendJSON(res, 200, statePayload());
+    }
+
+    if (method === 'POST' && url === '/api/chat') {
+      const { message } = await readBody(req);
+      const share = consent.has('aiSharing') && sensingActive();
+      const ctx = share ? session.getApprovedContext() : NO_CONTEXT;
+      const out = await reply({ message: String(message || '').slice(0, 4000), ctx });
+      return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share });
+    }
+    if (method === 'POST' && url === '/api/correction') {
+      const { wasAccurate } = await readBody(req);
+      if (!sensingActive()) return sendJSON(res, 409, { error: 'sensing is not active' });
+      return sendJSON(res, 200, session.recordCorrection({ wasAccurate: !!wasAccurate }));
+    }
+
+    if (method === 'GET' && url === '/api/memory') return sendJSON(res, 200, memory.summary());
+    if (method === 'GET' && url === '/api/memory/calendar') return sendJSON(res, 200, { today: new Date().toISOString().slice(0, 10), days: memory.calendar(), private: memory.isMuted() });
+    if (method === 'POST' && url === '/api/forget') { memory.clear(); return sendJSON(res, 200, { cleared: true }); }
+    if (method === 'POST' && url === '/api/memory/forgetDay') { const { date } = await readBody(req); memory.forgetDay(date); return sendJSON(res, 200, { ok: true }); }
+    if (method === 'POST' && url === '/api/incognito') {
+      const { on } = await readBody(req);
+      if (on) { consent.revoke(['memory']); memory.clear(); }
+      else consent.grant({ memory: true });
+      return sendJSON(res, 200, { private: memory.isMuted() });
+    }
+    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, { connectors });
+    if (method === 'POST' && url === '/api/connectors') {
+      const { id, connected } = await readBody(req);
+      const c = connectors.find((x) => x.id === id);
+      if (c) c.connected = !!connected;
+      return sendJSON(res, 200, { connectors });
+    }
+
+    if (method === 'GET' && !isApi) return serveStatic(res, url);
+    sendJSON(res, isApi ? 404 : 405, { error: isApi ? 'not found' : 'method not allowed' });
+  }
+
+  const server = http.createServer((req, res) => {
+    handle(req, res).catch((e) => { log(`request failed: ${e.message}`); if (!res.headersSent) sendJSON(res, 500, { error: 'internal error' }); });
+  });
+
+  async function close() {
+    await sensing.shutdown();
+    await new Promise((r) => server.close(() => r()));
+  }
+
+  return { server, consent, sensing, guard, close };
 }
 
-function readBody(req) {
-  return new Promise((resolve) => {
-    let b = '';
-    req.on('data', (c) => (b += c));
-    req.on('end', () => {
-      try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); }
-    });
+if (require.main === module) {
+  const port = Number(process.env.PORT) || 3000;
+  const app = createApp({ port });
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await app.close(); process.exit(0); });
+  app.server.listen(port, '127.0.0.1', () => {
+    process.stdout.write(`[attune] demo UI on http://localhost:${port}  (adapter: ${(process.env.ATTUNE_ADAPTER || 'mock')}; sensing starts only after consent)\n`);
   });
 }
 
-function serveStatic(res, urlPath) {
-  const file = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
-  const full = path.join(WEB_DIR, path.normalize(file).replace(/^(\.\.[/\\])+/, ''));
-  if (!full.startsWith(WEB_DIR)) return sendJSON(res, 403, { error: 'forbidden' });
-  fs.readFile(full, (err, data) => {
-    if (err) return sendJSON(res, 404, { error: 'not found' });
-    res.writeHead(200, { 'content-type': MIME[path.extname(full)] || 'application/octet-stream' });
-    res.end(data);
-  });
-}
-
-const server = http.createServer(async (req, res) => {
-  const { method, url } = req;
-
-  if (method === 'GET' && url === '/api/state') {
-    const ctx = consent ? session.getBodyContext() : { state: 'consent_required', say: false, directive: null, evidence: [], confidence: 0 };
-    // Raw pulse is shown to the human viewer (credibility anchor) but never handed to the AI.
-    return sendJSON(res, 200, {
-      consent,
-      pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null,
-      signals: consent ? session.getSignals() : [],
-      ...ctx,
-    });
-  }
-  if (method === 'POST' && url === '/api/consent') {
-    const { allow } = await readBody(req);
-    consent = !!allow;
-    return sendJSON(res, 200, { consent });
-  }
-  if (method === 'POST' && url === '/api/chat') {
-    const { message } = await readBody(req);
-    const ctx = consent ? session.getBodyContext() : { state: 'consent_required', say: false };
-    const out = await companionReply({ message: String(message || ''), ctx });
-    return sendJSON(res, 200, { ...out, state: ctx.state });
-  }
-  if (method === 'POST' && url === '/api/correction') {
-    const { wasAccurate } = await readBody(req);
-    return sendJSON(res, 200, session.recordCorrection({ wasAccurate: !!wasAccurate }));
-  }
-  if (method === 'GET' && url === '/api/memory') return sendJSON(res, 200, memory.summary());
-  if (method === 'GET' && url === '/api/memory/calendar') return sendJSON(res, 200, { today: new Date().toISOString().slice(0, 10), days: memory.calendar(), private: memory.isMuted() });
-  if (method === 'POST' && url === '/api/forget') { memory.clear(); return sendJSON(res, 200, { cleared: true }); }
-  if (method === 'POST' && url === '/api/memory/forgetDay') { const { date } = await readBody(req); memory.forgetDay(date); return sendJSON(res, 200, { ok: true }); }
-  if (method === 'POST' && url === '/api/incognito') {
-    const { on } = await readBody(req);
-    memory.setMuted(!!on);
-    if (on) memory.clear(); // private: drop anything already captured this session
-    return sendJSON(res, 200, { private: memory.isMuted() });
-  }
-  if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, { connectors });
-  if (method === 'POST' && url === '/api/connectors') {
-    const { id, connected } = await readBody(req);
-    const c = connectors.find((x) => x.id === id);
-    if (c) c.connected = !!connected;
-    return sendJSON(res, 200, { connectors });
-  }
-
-  if (method === 'GET') return serveStatic(res, url.split('?')[0]);
-  sendJSON(res, 405, { error: 'method not allowed' });
-});
-
-server.listen(PORT, () => {
-  process.stdout.write(`[attune] demo UI on http://localhost:${PORT}  (adapter: ${adapter.name}; consent required)\n`);
-});
+module.exports = { createApp };
