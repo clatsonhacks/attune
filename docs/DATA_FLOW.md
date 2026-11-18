@@ -18,6 +18,19 @@ What leaves where, when, and under which consent. Update this table whenever a f
 | Memory notes (state transitions, corrections; number-free) | Session | `.attune-memory.json` in the working directory (plaintext) | On transitions/corrections | `memory` |
 | Demo memory history | `memory.seedDemo()` | `.attune-demo-memory.json` (separate file) | Demo mode only | — (real mode removes any demo entries from its file) |
 
+## When the camera runs (decided 19 Nov 2026)
+Consent is asked **once** and saved in `.attune-consent.json` (gitignored; deleted by *Forget camera permission*).
+Saved consent is permission only. The camera turns on when:
+- the person allows it in the dialog (starts at once), or taps *turn on now* / *resume*;
+- a conversation starts (its first message);
+- the AI calls `check_in_with_body` — only offered when AI sharing is allowed; it answers immediately
+  ("camera starting" / current reading) and never waits for the camera.
+
+It turns off after `ATTUNE_SENSE_IDLE_MS` (default 5 min) without chat activity, on *pause* (sticky until
+*resume*, also across restarts) and when permission is forgotten. A *Camera on* badge shows whenever it runs.
+If breathing can't be measured because the chest isn't in view for 20 s, it continues with face-only metrics
+(no breathing, HRV or Presage check-ins); `ATTUNE_METRICS=face` starts that way.
+
 ## Never sent to the AI
 Pulse BPM, evidence strings (e.g. "pulse +14 over baseline"), raw metrics, video. Memory notes are stored
 number-free ("pulse above baseline").

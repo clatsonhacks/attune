@@ -6,9 +6,12 @@ ships as a **local MCP connector** that Claude or ChatGPT desktop connects to.
 > Prototype. No secrets committed; use `.env`. Roadmap: [docs/ATTUNE_IMPLEMENTATION_PLAN.md](docs/ATTUNE_IMPLEMENTATION_PLAN.md) ·
 > how data moves: [docs/DATA_FLOW.md](docs/DATA_FLOW.md) · threats: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
-**Consent first.** The camera/SDK never starts at boot. In the web UI it starts only after you tick *Camera
-sensing* and *I understand Presage processing*; sharing with the AI and local memory are separate, optional,
-and off by default. An AI cannot grant any of this.
+**Consent once.** The first time, Attune asks for camera sensing and the Presage disclosure (AI sharing and
+memory are separate and optional). Your answer is remembered. After that the camera turns on when a chat starts
+or when the AI asks for a reading, shows a *Camera on* badge, and turns off after 5 minutes without chatting.
+*Pause* stays paused until you resume; *Forget camera permission* deletes the saved choice. An AI cannot grant
+any permission. On-screen tips help you position yourself; if your chest isn't visible it falls back to
+face-only measurement.
 
 ## Run it (real)
 ```bash

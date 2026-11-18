@@ -155,6 +155,10 @@ Do a legal/privacy review before releasing final language.
 
 ---
 
+> **Decision 19 Nov 2026 (product owner):** consent is asked once and remembered. The camera starts on chat start or
+> when the AI asks (tool call), stops after 5 min idle, with a visible badge, sticky pause and one-click forget. This
+> replaces "never silently resume" in §4: restarts restore *permission*, never a running camera.
+
 ## 5. Milestone roadmap (GitHub-ready checklist)
 
 ### M0 — Freeze, test and specify the baseline (P0)

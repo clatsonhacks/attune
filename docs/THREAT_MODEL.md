@@ -6,7 +6,7 @@ AI or another app to turn sensing on. Not a claim that nobody can ever access an
 | Actor | Can try to | Current mitigation | Gap / plan item |
 |---|---|---|---|
 | Normal user | Misunderstand what is shared | Separate opt-ins, Presage disclosure in the dialog, AI-sharing off by default | Legal review of copy (plan §4) |
-| AI model (via chat or MCP) | Grant itself camera access, widen scope | No consent tool; MCP consent comes from the human's config; web consent only via token-protected UI API | Per-session capability tokens (M6-03) |
+| AI model (via chat or MCP) | Grant itself camera access, widen scope | No consent tool; MCP consent comes from the human's config; web consent only via token-protected UI API. The chat AI can *turn the camera on* via `check_in_with_body` only after the person allowed sensing **and** AI sharing, never while paused; it gets interpreted context only | Per-session capability tokens (M6-03); rate-limit tool calls if abused |
 | Malicious website | Call the localhost API (CSRF), DNS rebinding | `127.0.0.1` bind, Host allowlist, Origin check, per-boot token only in `index.html`, CSP `frame-ancestors 'none'` | Packaged app should use IPC instead of HTTP (M1-03) |
 | Untrusted MCP client | Read context without the user's consent | Returns `consent_required` without `ATTUNE_CONSENT`; context is number-free | Short-lived scoped tokens (M6-03) |
 | Other local OS user | Read memory file | None beyond OS file permissions; file is plaintext | Encrypted per-user store, DPAPI (M5-01) |
