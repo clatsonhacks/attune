@@ -10,20 +10,23 @@ ships as a **local MCP connector** that Claude or ChatGPT desktop connects to.
 sensing* and *I understand Presage processing*; sharing with the AI and local memory are separate, optional,
 and off by default. An AI cannot grant any of this.
 
-## Try it without a camera or API key
+## Run it (real)
 ```bash
 npm install
-npm run web             # ⭐ self-contained demo UI at http://localhost:3000 (HUD + companion chat)
-npm run demo            # interpreter on synthetic vitals (prints the nudges)
-npm test                # privacy tests (consent, revoke, late callbacks, token/origin guard, MCP) + checks
+cp .env.example .env    # set SMARTSPECTRA_API_KEY and ANTHROPIC_API_KEY
+npm run web             # http://localhost:3000 — real webcam (SmartSpectra) + Claude (claude-opus-5-5)
+npm test                # privacy, insights, context-bridge and real-mode tests
 ```
-**The web demo** (`npm run web`, local only on `127.0.0.1`): tap *Grant consent to sense*, tick the boxes (tick
-*Share with the AI* to let the companion use the signal), watch the state cycle calm→stress→recovery, then say
-"I'm fine" while it shows **elevated** — the companion catches the gap. Runs on mock vitals + a mock companion (no credentials). Set `ATTUNE_ANTHROPIC_KEY` to use a real LLM.
+Open the page, tap *Grant consent to sense*, tick the boxes (tick *Share with the AI* to let Claude use the
+signal) and talk. Chat messages go to Anthropic's API; body guidance is added only when you allowed sharing.
+Without `ANTHROPIC_API_KEY` the chat says the AI isn't connected — it never makes up replies.
+
+**Demo mode** (no camera, no keys): `npm run web:demo` — synthetic vitals cycling calm→stress→recovery and
+scripted replies, with its own memory file.
 
 ## Run the MCP connector
 ```bash
-npm run connector       # starts the stdio MCP server (mock adapter by default; ATTUNE_ADAPTER=smartspectra for the real SDK)
+npm run connector       # stdio MCP server — real SDK by default (ATTUNE_ADAPTER=mock for synthetic vitals)
 ```
 Consent comes from **your** config, not from the AI. Without `ATTUNE_CONSENT`, `get_body_context` returns
 `consent_required` and the camera never starts. With it, the camera starts on the first `get_body_context`
@@ -48,8 +51,10 @@ In `claude_desktop_config.json`:
   }
 }
 ```
-(ChatGPT desktop: add it as a local MCP connector the same way.) Then ask the AI to call `get_body_context`
-before replying — see `SKILL.md` for the usage contract.
+The *Connectors* page in the web UI shows this snippet with the right path for your machine, and whether
+Claude Desktop already has it (read-only — Attune never edits that file). ChatGPT needs a remote connector
+with pairing and isn't supported yet. Then ask the AI to call `get_body_context` before replying — see
+`SKILL.md` for the usage contract.
 
 ## Tools exposed
 `get_attune_status` · `get_body_context` · `record_correction` · `memory_get` · `memory_append` · `forget_me`

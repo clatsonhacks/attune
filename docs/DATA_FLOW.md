@@ -14,9 +14,9 @@ What leaves where, when, and under which consent. Update this table whenever a f
 | Decoded metrics (pulse, expression, talking) | SDK → adapter | Interpreter, in memory only | While sensing is active | `sensing` |
 | Pulse BPM + signal tiles | Session | Human UI via `/api/state` (localhost, token) | While sensing is active | `sensing` |
 | Approved context `{state, say, directive, suggestedUtterance, confidence}` | Session | Companion reply / MCP `get_body_context` | Per chat turn / per tool call | `aiSharing` (web) · `ai-sharing` in `ATTUNE_CONSENT` (MCP) |
-| Chat message text | User | Anthropic API, only if `ATTUNE_ANTHROPIC_KEY` is set | Per chat turn | Using the chat (provider disclosure for hosted AI is plan M4-06) |
+| Chat message text + conversation history (last 20 turns, in memory only) | User | Anthropic API (`claude-opus-5-5`), when `ANTHROPIC_API_KEY` is set | Per chat turn | Using the chat; disclosed under the chat box (demo mode: nothing leaves the device) |
 | Memory notes (state transitions, corrections; number-free) | Session | `.attune-memory.json` in the working directory (plaintext) | On transitions/corrections | `memory` |
-| Demo memory history | `memory.seedDemo()` | Same file | Mock mode only | — (not in real mode) |
+| Demo memory history | `memory.seedDemo()` | `.attune-demo-memory.json` (separate file) | Demo mode only | — (real mode removes any demo entries from its file) |
 
 ## Never sent to the AI
 Pulse BPM, evidence strings (e.g. "pulse +14 over baseline"), raw metrics, video. Memory notes are stored
