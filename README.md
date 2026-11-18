@@ -3,32 +3,48 @@
 Attune turns contactless vitals (Presage SmartSpectra) into **behavioral nudges for an AI, not numbers**, and
 ships as a **local MCP connector** that Claude or ChatGPT desktop connects to.
 
-> Prototype. No secrets committed; use `.env`.
+> Prototype. No secrets committed; use `.env`. Roadmap: [docs/ATTUNE_IMPLEMENTATION_PLAN.md](docs/ATTUNE_IMPLEMENTATION_PLAN.md) ·
+> how data moves: [docs/DATA_FLOW.md](docs/DATA_FLOW.md) · threats: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
+**Consent first.** The camera/SDK never starts at boot. In the web UI it starts only after you tick *Camera
+sensing* and *I understand Presage processing*; sharing with the AI and local memory are separate, optional,
+and off by default. An AI cannot grant any of this.
 
 ## Try it without a camera or API key
 ```bash
 npm install
 npm run web             # ⭐ self-contained demo UI at http://localhost:3000 (HUD + companion chat)
 npm run demo            # interpreter on synthetic vitals (prints the nudges)
-npm run test:connector  # headless test of the connector brain (memory + session + consent loop)
-npm run test:adapter    # SmartSpectra mapping vs the SDK's protobuf schema
+npm test                # privacy tests (consent, revoke, late callbacks, token/origin guard, MCP) + checks
 ```
-**The web demo** (`npm run web`) is the "basic version": grant consent, watch the state cycle
-calm→stress→recovery on the left, then say "I'm fine" while it shows **elevated** — the companion catches the
-gap. Runs on mock vitals + a mock companion (no credentials). Set `ATTUNE_ANTHROPIC_KEY` to use a real LLM.
+**The web demo** (`npm run web`, local only on `127.0.0.1`): tap *Grant consent to sense*, tick the boxes (tick
+*Share with the AI* to let the companion use the signal), watch the state cycle calm→stress→recovery, then say
+"I'm fine" while it shows **elevated** — the companion catches the gap. Runs on mock vitals + a mock companion (no credentials). Set `ATTUNE_ANTHROPIC_KEY` to use a real LLM.
 
 ## Run the MCP connector
 ```bash
 npm run connector       # starts the stdio MCP server (mock adapter by default; ATTUNE_ADAPTER=smartspectra for the real SDK)
 ```
-It starts un-consented: `get_body_context` returns `consent_required` until an AI calls `grant_consent({allow:true})`.
+Consent comes from **your** config, not from the AI. Without `ATTUNE_CONSENT`, `get_body_context` returns
+`consent_required` and the camera never starts. With it, the camera starts on the first `get_body_context`
+call and stops after 2 minutes without calls (`ATTUNE_IDLE_MS`).
+
+| `ATTUNE_CONSENT` word | allows |
+|---|---|
+| `sensing` + `presage-ack` | camera + SmartSpectra (both required) |
+| `ai-sharing` | interpreted, number-free context returned to the AI |
+| `memory` | interpretations stored locally / `memory_*` tools |
 
 ### Add it to Claude Desktop
 In `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "attune-sense": { "command": "node", "args": ["<abs-path>/attune/src/server.js"] }
+    "attune-sense": {
+      "command": "node",
+      "args": ["<abs-path>/attune/src/server.js"],
+      "env": { "ATTUNE_CONSENT": "sensing,presage-ack,ai-sharing" }
+    }
   }
 }
 ```
@@ -36,15 +52,18 @@ In `claude_desktop_config.json`:
 before replying — see `SKILL.md` for the usage contract.
 
 ## Tools exposed
-`grant_consent` · `get_body_context` · `record_correction` · `memory_get` · `memory_append` · `forget_me`
+`get_attune_status` · `get_body_context` · `record_correction` · `memory_get` · `memory_append` · `forget_me`
+(there is deliberately no consent tool)
 
 ## Layout
 - `src/interpreter.js` — baseline + pulse-drift/expression thresholds, confidence gate, hysteresis, nudges.
 - `src/session.js` — standing body-context for the AI (poll-safe) + memory wiring.
+- `src/privacy/consent.js` — trusted consent scopes · `src/privacy/localGuard.js` — localhost/token/origin guard.
+- `src/sensing.js` — the only place the sensor starts/stops; drops late callbacks after revoke.
 - `src/memory.js` — local-first store (interpretations only; encryption is M5).
 - `src/adapter/mock.js` — synthetic stream · `src/adapter/smartspectra.js` — real SDK adapter.
 - `src/server.js` — the MCP connector · `SKILL.md` — how an AI uses it.
-- `run-demo.js` · `test-connector.js` · `test-adapter.js` — runnable checks.
+- `tests/privacy/*.test.js` — `node:test` suite · `run-demo.js` · `test-connector.js` · `test-adapter.js`.
 
 ## Use the real SmartSpectra SDK
 `@smartspectra/node-sdk` is already a dependency (prebuilt native runtime for win32-x64, darwin-arm64,
@@ -56,9 +75,10 @@ npm run web                   # or: npm run connector
 ```
 `src/adapter/smartspectra.js` creates a `SmartSpectraSDK` on the default webcam, requests pulse rate,
 expressions, talking and blinking (telemetry off), and maps each decoded `Metrics` packet to our sample
-shape (`cardio.pulseRate`, `face.expression`, `face.talking`; confidence 0–100 → 0–1). No live
-HRV/breathing. `npm run test:adapter` checks the mapping against the SDK's own protobuf decoder.
+shape (`cardio.pulseRate`, `face.expression`, `face.talking`; confidence 0–100 → 0–1). Breathing/HRV show
+"unavailable" in real mode (the demo values are simulated from pulse). `npm run test:adapter` checks the mapping against the SDK's own protobuf decoder.
 
 ## Status
-Interpreter ✅ · connector brain ✅ · MCP server ✅ · real SmartSpectra adapter ✅ (live run needs API key + webcam) ·
-next: encryption at rest, consent UX polish.
+Plan M0 (baseline, docs, threat model) ✅ · M1 consent + local boundary: core done (see the plan for what's left:
+SDK worker-process isolation, network audit, device-failure tests) · next: M2 Insights, M3 Context Bridge,
+M4 Attune Live voice.
