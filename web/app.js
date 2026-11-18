@@ -226,7 +226,7 @@ async function poll() {
 }
 /* ---------- AI status ---------- */
 function renderAi(ai) {
-  const t = ai.mode === 'demo' ? 'Demo replies (scripted)' : ai.connected ? `Claude · ${ai.model}` : 'AI not connected';
+  const t = ai.mode === 'demo' ? 'Demo replies (scripted)' : ai.connected ? `Groq · ${ai.model}` : 'AI not connected';
   if ($('aiStatus').textContent !== t) $('aiStatus').textContent = t;
   $('aiStatus').classList.toggle('bad', ai.mode !== 'demo' && !ai.connected);
   $('aiDisclosure').hidden = ai.mode === 'demo';
