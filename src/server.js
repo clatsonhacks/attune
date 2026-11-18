@@ -1,104 +1,156 @@
 'use strict';
 /*
- * Attune MCP connector (Shape A) — a local stdio MCP server that Claude/ChatGPT desktop connects to.
- * Tools:
- *   grant_consent({ allow })      — consent gate; body-context is withheld until allow=true
- *   get_body_context()            — the interpreted nudge the AI reads before replying (never raw numbers)
- *   record_correction({ wasAccurate }) — user corrected the read; makes it more conservative + remembers
- *   memory_get()                  — compact cross-session summary (interpretations only)
- *   memory_append({ note })       — note what mattered (no raw signals)
- *   forget_me()                   — delete local memory
+ * Attune MCP connector — a local stdio MCP server that Claude/ChatGPT desktop connects to.
  *
+ * Consent is NOT an AI tool. The human grants it in the connector's own config (which an AI cannot
+ * edit through these tools), e.g. in claude_desktop_config.json:
+ *   "env": { "ATTUNE_CONSENT": "sensing,presage-ack,ai-sharing" }
+ *     sensing      — camera + SmartSpectra may run
+ *     presage-ack  — you have read the Presage processing disclosure (required for sensing)
+ *     ai-sharing   — interpreted, number-free context may be returned to the AI
+ *     memory       — interpretations may be stored locally and read back
+ *
+ * The camera starts lazily on the first get_body_context call and stops after ATTUNE_IDLE_MS
+ * (default 2 min) without calls, so it never runs just because the host app is open.
+ *
+ * Tools: get_attune_status · get_body_context · record_correction · memory_get · memory_append · forget_me
  * Uses the mock adapter by default; set ATTUNE_ADAPTER=smartspectra to use the real SDK.
- * The @modelcontextprotocol/sdk is ESM, so it is loaded via dynamic import from this CommonJS file.
- * NOTE: confirm the SDK tool API against the installed version (`npm ls @modelcontextprotocol/sdk`).
  */
 const { createSession } = require('./session');
 const { createMemory } = require('./memory');
 const { createAdapter } = require('./adapter');
+const { createConsent, parseConsentString } = require('./privacy/consent');
+const { createSensing } = require('./sensing');
+
+function createConnectorCore({
+  consentString = process.env.ATTUNE_CONSENT,
+  adapterFactory = () => createAdapter(),
+  memory = createMemory(),
+  idleMs = Number(process.env.ATTUNE_IDLE_MS) || 120000,
+  log = (m) => process.stderr.write(`[attune-sense] ${m}\n`),
+} = {}) {
+  const requested = parseConsentString(consentString);
+  const simulated = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase() !== 'smartspectra';
+  const consent = createConsent();
+  memory.setMuted(!requested.memory);
+
+  let session = createSession({ simulatedSignals: simulated });
+  const sensing = createSensing({
+    adapterFactory,
+    consent,
+    log,
+    onStart: () => { session = createSession({ memory: requested.memory ? memory : null, simulatedSignals: simulated }); },
+    onSample: (sample) => session.ingest(sample),
+  });
+
+  let idleTimer = null;
+  function touch() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { consent.revoke(['sensing']); }, idleMs);
+    if (idleTimer.unref) idleTimer.unref();
+  }
+
+  const canSense = () => requested.sensing && requested.presageAck;
+  const canShare = () => requested.aiSharing;
+
+  function status() {
+    const s = sensing.status();
+    return {
+      sensingAllowed: canSense(),
+      aiSharingAllowed: canShare(),
+      memoryAllowed: requested.memory,
+      sensing: s.state,
+      ...(s.error ? { error: s.error } : {}),
+      howToEnable: canSense() && canShare() ? undefined
+        : 'Consent is set by the user, not the AI: add ATTUNE_CONSENT="sensing,presage-ack,ai-sharing" to this connector\'s env in the host config.',
+    };
+  }
+
+  async function getBodyContext() {
+    if (!canSense() || !canShare()) return { state: 'consent_required', say: false, ...status() };
+    if (sensing.status().state !== 'active') {
+      consent.grant({ sensing: true, presageAck: true });
+      await sensing.settled();
+    }
+    touch();
+    if (sensing.status().state !== 'active') return { state: 'unavailable', say: false, error: sensing.status().error };
+    return session.getApprovedContext();
+  }
+
+  function recordCorrection({ wasAccurate }) {
+    if (sensing.status().state !== 'active') return { ok: false, reason: 'sensing is not active' };
+    return session.recordCorrection({ wasAccurate });
+  }
+
+  function memoryGet() {
+    if (!requested.memory || !canShare()) return { memory: 'disabled', reason: 'memory and ai-sharing consent are both required' };
+    return memory.summary();
+  }
+
+  function memoryAppend({ note }) {
+    if (!requested.memory) return { ok: false, reason: 'memory consent is off' };
+    memory.append({ type: 'note', note: String(note).slice(0, 500) });
+    return { ok: true };
+  }
+
+  async function shutdown() {
+    clearTimeout(idleTimer);
+    await sensing.shutdown();
+  }
+
+  return { status, getBodyContext, recordCorrection, memoryGet, memoryAppend, forget: () => { memory.clear(); return { cleared: true }; }, shutdown, sensing };
+}
 
 async function main() {
   const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
   const { z } = require('zod');
 
-  const memory = createMemory();
-  const session = createSession({ memory });
-  const adapter = createAdapter(); // mock by default; ATTUNE_ADAPTER=smartspectra for the real SDK
-  adapter.start((sample) => session.ingest(sample)); // throws with a clear message if the SDK can't start
-
-  let consented = false;
+  const core = createConnectorCore();
   const text = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
+  const server = new McpServer({ name: 'attune-sense', version: '0.2.0' });
 
-  const server = new McpServer({ name: 'attune-sense', version: '0.1.0' });
+  server.registerTool('get_attune_status',
+    { description: 'Read-only: whether the user has allowed sensing / AI sharing / memory, and whether sensing is running.', inputSchema: {} },
+    async () => text(core.status()));
 
-  server.registerTool(
-    'grant_consent',
+  server.registerTool('get_body_context',
     {
       description:
-        'Consent gate. Attune shares INTERPRETED body-signals (never raw video/vitals) with this AI. ' +
-        'Call with allow=true to enable, allow=false to revoke.',
-      inputSchema: { allow: z.boolean() },
-    },
-    async ({ allow }) => {
-      consented = !!allow;
-      return text({ consent: consented });
-    },
-  );
-
-  server.registerTool(
-    'get_body_context',
-    {
-      description:
-        'Call before each reply. Returns {state, say, directive, suggestedUtterance, evidence, confidence}. ' +
-        'If say=true let directive shape your tone (be tentative, invite correction). If state="unclear", say ' +
-        'nothing about the body. Never read raw numbers aloud. Non-medical; not a diagnosis; not lie-detection.',
+        'Call before a reply. Returns {state, say, directive, suggestedUtterance, confidence} — interpreted guidance, ' +
+        'never measurements. If say=true let directive shape your tone (be tentative, invite correction). If state is ' +
+        '"unclear", "consent_required" or "unavailable", say nothing about the body. Non-medical; not a diagnosis; not lie-detection.',
       inputSchema: {},
     },
-    async () => {
-      if (!consented) return text({ state: 'consent_required', say: false });
-      return text(session.getBodyContext());
-    },
-  );
+    async () => text(await core.getBodyContext()));
 
-  server.registerTool(
-    'record_correction',
-    {
-      description: 'The user corrected the read (e.g. "I\'m fine"). Pass wasAccurate=false to make it more conservative.',
-      inputSchema: { wasAccurate: z.boolean() },
-    },
-    async ({ wasAccurate }) => text(session.recordCorrection({ wasAccurate })),
-  );
+  server.registerTool('record_correction',
+    { description: 'The user corrected the read (e.g. "I\'m fine"). Pass wasAccurate=false to make it more conservative.', inputSchema: { wasAccurate: z.boolean() } },
+    async ({ wasAccurate }) => text(core.recordCorrection({ wasAccurate })));
 
-  server.registerTool(
-    'memory_get',
-    { description: 'Compact cross-session summary (interpretations only). Load at conversation start.', inputSchema: {} },
-    async () => text(memory.summary()),
-  );
+  server.registerTool('memory_get',
+    { description: 'Compact cross-session summary (interpretations only). Only available if the user enabled memory.', inputSchema: {} },
+    async () => text(core.memoryGet()));
 
-  server.registerTool(
-    'memory_append',
-    { description: 'Note what mattered this session (no raw signals).', inputSchema: { note: z.string() } },
-    async ({ note }) => {
-      memory.append({ type: 'note', note });
-      return text({ ok: true });
-    },
-  );
+  server.registerTool('memory_append',
+    { description: 'Note what mattered this session (no raw signals). Only works if the user enabled memory.', inputSchema: { note: z.string() } },
+    async ({ note }) => text(core.memoryAppend({ note })));
 
-  server.registerTool(
-    'forget_me',
+  server.registerTool('forget_me',
     { description: 'Delete all local Attune memory for this user.', inputSchema: {} },
-    async () => {
-      memory.clear();
-      return text({ cleared: true });
-    },
-  );
+    async () => text(core.forget()));
 
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await core.shutdown(); process.exit(0); });
   await server.connect(new StdioServerTransport());
-  process.stderr.write(`[attune-sense] MCP connector running on stdio (adapter: ${adapter.name}). Consent required before body-context is shared.\n`);
+  const st = core.status();
+  process.stderr.write(`[attune-sense] MCP connector on stdio — sensing ${st.sensingAllowed ? 'allowed (starts on first request)' : 'not allowed'}, AI sharing ${st.aiSharingAllowed ? 'on' : 'off'}.\n`);
 }
 
-main().catch((e) => {
-  process.stderr.write(`[attune-sense] fatal: ${e.stack || e.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((e) => {
+    process.stderr.write(`[attune-sense] fatal: ${e.stack || e.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { createConnectorCore };
