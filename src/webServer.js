@@ -1,9 +1,9 @@
 'use strict';
 /*
- * Attune — local demo backend + web UI.
+ * Attune — local backend + web UI. Real by default (SmartSpectra SDK + Claude); demo only with --demo.
  *
  * Privacy boundary (see docs/DATA_FLOW.md):
- *  - The sensor (mock, or the real SmartSpectra SDK with ATTUNE_ADAPTER=smartspectra) does NOT start at
+ *  - The sensor (the real SmartSpectra SDK, or synthetic vitals in demo mode) does NOT start at
  *    boot. It starts only after the human grants the `sensing` scope (with the Presage disclosure
  *    acknowledged) in the UI, and stops on revoke.
  *  - Binds to 127.0.0.1 only; every /api call needs the per-boot session token (src/privacy/localGuard.js).
@@ -16,8 +16,9 @@ const fs = require('fs');
 const path = require('path');
 const { createSession } = require('./session');
 const { createMemory } = require('./memory');
-const { createAdapter } = require('./adapter');
-const { companionReply } = require('./companion');
+const { createAdapter, isDemo } = require('./adapter');
+const { createCompanion } = require('./companion');
+const { connectorsStatus } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
 const { createSensing } = require('./sensing');
@@ -32,22 +33,28 @@ const NO_CONTEXT = { state: 'off', say: false, directive: null, suggestedUtteran
 function createApp({
   port = 3000,
   adapterFactory = () => createAdapter({ intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250 }),
-  memory = createMemory(),
-  reply = companionReply,
+  demo = isDemo(),
+  // Demo and real keep separate memory files so synthetic history never mixes with yours.
+  memory = createMemory(path.join(process.cwd(), demo ? '.attune-demo-memory.json' : '.attune-memory.json')),
+  companion = null,
+  reply = null, // test hook: replace the companion's reply function
   log = (m) => process.stderr.write(`[attune] ${m}\n`),
 } = {}) {
+  companion = companion || createCompanion({ demo, log });
+  const replyFn = reply || companion.reply;
   const guard = createLocalGuard({ port });
   const consent = createConsent();
   const capabilities = createCapabilities({ consent });
   const bridge = createContextBridge({ capabilities });
   consent.onChange(() => bridge.onConsentChange());
   let companionCap = null;
-  const adapterName = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase();
-  const simulated = adapterName !== 'smartspectra';
+  const simulated = demo;
+  const adapterName = demo ? 'mock' : 'smartspectra';
 
   // Memory writes only with the memory scope; demo history is seeded only in mock mode.
   memory.setMuted(true);
   if (simulated) memory.seedDemo();
+  else if (memory.dropDemo()) log('removed demo history from real memory');
 
   let session = createSession({ simulatedSignals: simulated });
   let lastSample = null;
@@ -71,13 +78,6 @@ function createApp({
   });
 
   consent.onChange((next) => memory.setMuted(!next.memory));
-
-  // Connector entries are demo placeholders until real provider registration lands (plan M6-08).
-  const connectors = [
-    { id: 'claude', name: 'Claude', desc: 'Desktop · MCP connector (demo status)', connected: true },
-    { id: 'chatgpt', name: 'ChatGPT', desc: 'Desktop · MCP connector (demo status)', connected: false },
-    { id: 'mcp', name: 'attune-sense (local MCP)', desc: 'This device · stdio (demo status)', connected: true },
-  ];
 
   const sensingActive = () => sensing.status().state === 'active';
 
@@ -117,7 +117,7 @@ function createApp({
   function statePayload() {
     const c = consent.snapshot();
     const s = sensing.status();
-    const base = { consent: c, sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated } };
+    const base = { mode: demo ? 'demo' : 'real', ai: companion.status(), consent: c, sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated } };
     if (!sensingActive()) return { ...base, ...NO_CONTEXT, state: s.state === 'error' ? 'error' : c.sensing ? 'starting' : 'consent_required', pulseBpm: null, signals: [], evidence: [] };
     const ctx = session.getBodyContext();
     // Measurements are shown to the consenting human only; the AI path uses getApprovedContext().
@@ -159,8 +159,12 @@ function createApp({
       if (consent.has('aiSharing') && !capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
       const share = consent.has('aiSharing') && sensingActive();
       const ctx = share ? bridge.getApprovedContext(companionCap) : NO_CONTEXT;
-      const out = await reply({ message: String(message || '').slice(0, 4000), ctx });
-      return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share });
+      const out = await replyFn({ message: String(message || '').slice(0, 4000), ctx });
+      return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share, ai: companion.status() });
+    }
+    if (method === 'POST' && url === '/api/chat/reset') {
+      companion.reset();
+      return sendJSON(res, 200, { ok: true });
     }
     if (method === 'POST' && url === '/api/insight') {
       // User-initiated Presage Insight. Returns at once; the answer arrives later via /api/state.
@@ -186,13 +190,7 @@ function createApp({
       else consent.grant({ memory: true });
       return sendJSON(res, 200, { private: memory.isMuted() });
     }
-    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, { connectors });
-    if (method === 'POST' && url === '/api/connectors') {
-      const { id, connected } = await readBody(req);
-      const c = connectors.find((x) => x.id === id);
-      if (c) c.connected = !!connected;
-      return sendJSON(res, 200, { connectors });
-    }
+    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus());
 
     if (method === 'GET' && !isApi) return serveStatic(res, url);
     sendJSON(res, isApi ? 404 : 405, { error: isApi ? 'not found' : 'method not allowed' });
@@ -215,7 +213,7 @@ if (require.main === module) {
   const app = createApp({ port });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await app.close(); process.exit(0); });
   app.server.listen(port, '127.0.0.1', () => {
-    process.stdout.write(`[attune] demo UI on http://localhost:${port}  (adapter: ${(process.env.ATTUNE_ADAPTER || 'mock')}; sensing starts only after consent)\n`);
+    process.stdout.write(`[attune] http://localhost:${port}  (${isDemo() ? 'DEMO mode: synthetic vitals, scripted replies' : 'real mode: SmartSpectra + Claude'}; sensing starts only after consent)\n`);
   });
 }
 
