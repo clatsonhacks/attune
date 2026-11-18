@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="vendor/overlayscrollbars.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -90,7 +91,7 @@
               <div class="sub"><span id="pulse">—</span> <small>bpm</small> · <span id="confLabel">signal —</span></div>
             </div>
             <div class="signals" id="signals"></div>
-            <div class="slot" id="slot">
+            <div class="scroll-host slot-host" id="slotHost"><div class="slot" id="slot">
               <div class="slot-empty" id="slotEmpty">Tap a signal to see how it's read.</div>
               <div class="signal-detail" id="signalDetail" hidden></div>
               <div class="insight" id="insightBox" hidden>
@@ -104,7 +105,7 @@
                 <div id="directive"></div>
                 <div class="evidence" id="evidence"></div>
               </div>
-            </div>
+            </div></div>
             <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Grant consent to sense</span></button>
             <p class="fineprint warn" id="sensorError" hidden></p>
             <p class="fineprint" id="aiNote" hidden>Sensing is on, but sharing with the AI is off — replies won't use your body signal.</p>
@@ -113,7 +114,8 @@
 
           <section class="conversation glass">
             <div class="conv-head"><span>Companion</span><span class="ai-status" id="aiStatus"></span><button class="mini" id="newChat" title="Start a new conversation"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>New chat</button></div>
-            <div id="log" class="log"></div>
+            <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
+              <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
@@ -169,6 +171,7 @@
     </div>
   </div>
 
+  <script src="vendor/overlayscrollbars.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

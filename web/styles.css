@@ -83,7 +83,7 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 
 /* ---- Presence ---- */
 .presence { padding:22px 22px; display:flex; flex-direction:column; align-items:center; text-align:center; min-height:0; overflow:hidden; }
-.orb-wrap { height:210px; flex:none; display:grid; place-items:center; margin-top:2px; }
+.orb-wrap { height:clamp(118px, 22vh, 210px); flex:none; display:grid; place-items:center; margin-top:2px; }
 
 .readout { margin-top:4px; width:100%; flex:none; }
 .state-word { font-family:var(--font-head); font-size:36px; line-height:1.1; font-weight:600; letter-spacing:.2px; text-transform:capitalize; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; height:40px; }
@@ -106,7 +106,8 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .sig.ready .sdot { background:var(--accent); }
 .sig.paused .sdot { background:#9aa7a0; }
 @keyframes blip { 0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 55%,transparent)} 70%{box-shadow:0 0 0 6px transparent} 100%{box-shadow:0 0 0 0 transparent} }
-.slot { flex:1 1 0; min-height:0; width:100%; margin-top:12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+.slot-host { flex:1 1 0; min-height:0; width:100%; margin-top:12px; }
+.slot { height:100%; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:12px; }
 .slot-empty { margin:auto; color:var(--muted); font-size:14px; }
 .signal-detail { flex:none; width:100%; text-align:left; padding:12px 14px; border-radius:14px; background:rgba(255,255,255,.5); border:1px solid var(--glass-brd); font-size:15px; line-height:1.5; }
 .signal-detail .sd-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; }
@@ -128,7 +129,8 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .conv-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 .conv-head span { font-size:14.5px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
 .mini { gap:5px; font-size:13px; color:var(--muted); background:transparent; border:1px solid var(--glass-brd); border-radius:8px; padding:4px 9px; cursor:pointer; }
-.log { flex:1 1 0; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:4px; }
+.log-host { position:relative; flex:1 1 0; min-height:0; }
+.log { height:100%; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:6px 14px 10px 0; }
 .m { padding:11px 14px; border-radius:16px; max-width:84%; font-size:17.5px; line-height:1.5; animation:rise .25s ease; }
 @keyframes rise { from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none} }
 .m.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:6px; }
@@ -208,10 +210,10 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 
 /* ===== Muse mascot (replaces the orb) ===== */
 .mascot { position:relative; display:grid; place-items:center; }
-.mascot .muse { position:relative; z-index:1; width:190px; height:auto; display:block; animation:bob 4.6s ease-in-out infinite; }
+.mascot .muse { position:relative; z-index:1; width:auto; height:clamp(104px, 20vh, 196px); display:block; animation:bob 4.6s ease-in-out infinite; }
 .mascot[data-state="elevated"] .muse { animation-duration:2.6s; }
 @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
-.mascot .aura { position:absolute; z-index:0; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--accent) 38%,transparent), transparent 66%); filter:blur(7px); animation:auraPulse 5s ease-in-out infinite; }
+.mascot .aura { position:absolute; z-index:0; width:clamp(110px, 21vh, 200px); height:clamp(110px, 21vh, 200px); border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--accent) 38%,transparent), transparent 66%); filter:blur(7px); animation:auraPulse 5s ease-in-out infinite; }
 @keyframes auraPulse { 0%,100%{transform:scale(.9); opacity:.6} 50%{transform:scale(1.07); opacity:.95} }
 .mascot[data-state="elevated"] .aura { animation-duration:2.3s; }
 .mascot .exp { opacity:0; transition:opacity .45s ease; }
@@ -260,3 +262,27 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .snippet { margin:10px 0 8px; padding:12px 14px; border-radius:12px; background:rgba(255,255,255,.6); border:1px solid var(--glass-brd); font-size:13px; line-height:1.45; overflow-x:auto; white-space:pre; }
 .conn-row { align-items:flex-start; }
 .conn-row .cmeta { min-width:0; }
+
+/* ===== Scrollbars: OverlayScrollbars with an Attune theme (thin, auto-hiding, accent-tinted) ===== */
+.os-theme-attune {
+  --os-size:8px; --os-padding-perpendicular:2px; --os-padding-axis:6px;
+  --os-track-border-radius:8px; --os-handle-border-radius:8px; --os-handle-min-size:36px;
+  --os-handle-interactive-area-offset:6px;
+  --os-handle-bg: color-mix(in srgb, var(--accent) 38%, transparent);
+  --os-handle-bg-hover: color-mix(in srgb, var(--accent) 60%, transparent);
+  --os-handle-bg-active: color-mix(in srgb, var(--accent) 78%, transparent);
+  --os-handle-perpendicular-size:70%; --os-handle-perpendicular-size-hover:100%; --os-handle-perpendicular-size-active:100%;
+  box-sizing:border-box;
+}
+.os-theme-attune .os-scrollbar-handle { transition: background-color .2s, width .15s, height .15s; }
+/* soft fade where content scrolls out of view */
+.log, .slot {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+/* "Latest" pill when new messages arrive while scrolled up */
+.jump { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; gap:6px; padding:7px 14px;
+  border:1px solid var(--glass-brd); border-radius:999px; background:var(--accent); color:#fff; font-size:13.5px; font-weight:600;
+  box-shadow:0 10px 24px -10px color-mix(in srgb,var(--accent) 70%,transparent); cursor:pointer; animation:rise .2s ease; }
+.jump[hidden] { display:none; }
+.snippet { overflow-x:auto; }
