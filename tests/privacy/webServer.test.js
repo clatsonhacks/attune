@@ -115,3 +115,30 @@ test('memory is not written without the memory scope', async (t) => {
   await api('/api/correction', { wasAccurate: false });
   assert.strictEqual(JSON.stringify(mem.memory.summary()), before);
 });
+
+test('insights reach the human UI; the AI only gets a number-free note; chat never waits', async (t) => {
+  const { createMockAdapter } = require('../../src/adapter/mock');
+  const port = 30000 + Math.floor(Math.random() * 20000);
+  const mem = tempMemory();
+  const ctxs = [];
+  const app = createApp({ port, memory: mem.memory, log: () => {},
+    adapterFactory: () => createMockAdapter({ intervalMs: 15, insightEverySamples: 4, insightNeverArrives: true }),
+    reply: async ({ ctx }) => { ctxs.push(ctx); return { reply: 'ok', usedBody: !!ctx.say }; } });
+  await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
+  t.after(async () => { await app.close(); mem.cleanup(); });
+  const api = (path, body) => request(port, { method: body ? 'POST' : 'GET', path, body, headers: { 'x-attune-token': app.guard.token } });
+
+  await api('/api/consent', { sensing: true, presageAck: true, aiSharing: true });
+  let s;
+  for (let i = 0; i < 40; i++) { s = (await api('/api/state')).json; if (s.insight && /bpm/.test(s.insight.text)) break; await new Promise((r) => setTimeout(r, 50)); }
+  assert.ok(s.insight, 'insight visible to the human');
+
+  const req = await api('/api/insight', { text: 'how am I doing?' });
+  assert.strictEqual(req.status, 202); // accepted; the answer will never arrive (insightNeverArrives)
+  const t0 = Date.now();
+  await api('/api/chat', { message: 'hi' });
+  assert.ok(Date.now() - t0 < 500, 'chat did not wait for the insight');
+  const last = ctxs[ctxs.length - 1];
+  if (last.note) assert.ok(!/\d|bpm/.test(last.note), last.note);
+  assert.strictEqual((await api('/api/insight', {})).status, 429); // rate limited is reported, not hidden
+});
