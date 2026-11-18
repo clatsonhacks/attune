@@ -202,7 +202,7 @@ $('signals').addEventListener('click', (e) => {
 
 /* ---------- Companion ---------- */
 let consent = false, lastState = null;
-const LABEL = { consent_required: 'consent needed', starting: 'starting camera', error: 'sensor error', off: 'paused', neutral: 'with you', elevated: 'elevated', unclear: 'signal unclear', calibrating: 'tuning in' };
+const LABEL = { consent_required: 'consent needed', starting: 'starting camera', error: 'sensor error', off: 'paused', standby: 'camera off', paused: 'paused', neutral: 'with you', elevated: 'elevated', unclear: 'signal unclear', calibrating: 'tuning in' };
 function addMsg(text, who, opts = {}) {
   const el = document.createElement('div');
   el.className = `m ${who}`; el.textContent = text;
@@ -221,6 +221,7 @@ async function poll() {
     const s = await api('/api/state');
     const c = s.consent || {};
     consent = !!c.sensing;
+    sensingInfo = s.sensing || {};
     const st = s.state || 'starting';
     $('incognito').checked = !c.memory;
     $('aiNote').hidden = !consent || !!c.aiSharing;
@@ -230,21 +231,18 @@ async function poll() {
     $('state').textContent = LABEL[st] || st;
     $('mascot').dataset.state = st;
     $('pulse').textContent = s.pulseBpm == null ? '—' : s.pulseBpm;
-    $('confLabel').textContent = !consent ? 'tap to begin' : st === 'starting' ? 'starting…' : st === 'calibrating' ? 'calibrating…' : st === 'unclear' ? 'signal low' : 'signal ' + Math.round((s.confidence || 0) * 100) + '%';
+    $('confLabel').textContent = !consent ? 'tap to begin' : st === 'standby' ? 'turns on when you chat' : st === 'paused' ? 'camera paused' : st === 'starting' ? 'starting…' : st === 'calibrating' ? 'calibrating…' : st === 'unclear' ? 'signal low' : 'signal ' + Math.round((s.confidence || 0) * 100) + '%';
     renderSignals(s.signals);
     proposeMood(moodFor(s));
     const active = s.sensing && s.sensing.state === 'active';
     const errored = s.sensing && s.sensing.state === 'error';
-    if (!errored) $('consentLabel').textContent = consent ? 'Sensing on — tap to pause' : 'Grant consent to sense';
+    renderCamera(s, c, active, errored);
     $('insightBox').hidden = !active;
     if (s.insight) {
       if ($('insightText').textContent !== s.insight.text) $('insightText').textContent = s.insight.text;
       $('insightMeta').textContent = `${s.insight.origin} · ${new Date(s.insight.receivedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
-    if (errored) $('consentLabel').textContent = 'Sensor stopped — tap to reset';
-    const iconHref = `assets/icons.svg#i-${consent ? 'pause' : 'consent'}`;
-    if ($('consentIcon').getAttribute('href') !== iconHref) $('consentIcon').setAttribute('href', iconHref);
-    $('consentBtn').classList.toggle('on', consent);
+
     const show = consent && s.say && s.directive;
     $('nudgeBox').hidden = !show;
     if (show) { $('directive').textContent = s.directive; $('evidence').textContent = (s.evidence || []).join(' · '); }
@@ -305,23 +303,76 @@ function openConsent() {
 }
 function syncConsentForm() { $('consentStart').disabled = !($('cSensing').checked && $('cPresage').checked); }
 ['cSensing', 'cPresage'].forEach((id) => ($(id).onchange = syncConsentForm));
-$('consentCancel').onclick = () => { $('consentDlg').hidden = true; };
+$('consentCancel').onclick = () => { $('consentDlg').hidden = true; rememberAsked(); };
 $('consentStart').onclick = async () => {
   const r = await api('/api/consent', { sensing: true, presageAck: true, aiSharing: $('cAi').checked, memory: $('cMemory').checked });
   if (r.error) { $('consentErr').textContent = r.error; $('consentErr').hidden = false; return; }
   $('consentDlg').hidden = true;
+  rememberAsked();
   poll();
 };
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('consentDlg').hidden) $('consentDlg').hidden = true; });
+/* ---------- Camera button: allow / pause / resume / turn on now ---------- */
+let sensingInfo = {};
+function cameraAction() {
+  if (!consent) return 'allow';
+  if (sensingInfo.state === 'active' || sensingInfo.state === 'starting') return 'pause';
+  if (sensingInfo.paused) return 'resume';
+  return 'start';
+}
+const CAM_BUTTON = {
+  allow: ['Allow camera sensing', 'consent'],
+  pause: ['Camera on — tap to pause', 'pause'],
+  resume: ['Paused — tap to resume', 'consent'],
+  start: ['Camera off — turn on now', 'consent'],
+};
+// Plain-language hints for the camera's positioning checks (SmartSpectra validation codes).
+const CAM_HINTS = { 1: 'Looking for your face…', 2: 'Only one face, please.', 3: 'Center your face in the camera.', 5: 'It is a bit dark — add some light.',
+  6: 'Too bright — reduce glare.', 7: 'Sit back a little so your chest is visible too.', 10: 'Adjusting the camera…', 11: 'Camera is slow — close other camera apps.',
+  12: 'Try to hold still for a moment.', 13: 'Move back a little.', 14: 'Move a little closer.', 15: 'Move down, or tilt the camera up.',
+  16: 'Move up, or tilt the camera down.', 17: 'Face the camera.' };
+function renderCamera(s, c, active, errored) {
+  const action = errored ? 'start' : cameraAction();
+  const [label, iconId] = errored ? ['Sensor stopped — tap to retry', 'refresh'] : CAM_BUTTON[action];
+  if ($('consentLabel').textContent !== label) $('consentLabel').textContent = label;
+  const iconHref = `assets/icons.svg#i-${iconId}`;
+  if ($('consentIcon').getAttribute('href') !== iconHref) $('consentIcon').setAttribute('href', iconHref);
+  $('consentBtn').classList.toggle('on', action === 'pause');
+  $('forgetConsent').hidden = !c.sensing;
+  $('camPill').hidden = !active;
+  const cam = (s.sensing && s.sensing.camera) || {};
+  let hint = '';
+  if (active && cam.validationCode) hint = CAM_HINTS[cam.validationCode] || cam.hint || '';
+  else if (active && cam.processing === 'starting') hint = 'Getting a clear view…';
+  if (active && cam.mode === 'face') hint = hint || 'Face-only mode: no breathing or Presage check-ins.';
+  if ($('camHint').textContent !== hint) $('camHint').textContent = hint;
+  $('camHint').hidden = !hint;
+  const idleMin = s.sensing && s.sensing.idleInMs != null ? Math.ceil(s.sensing.idleInMs / 60000) : null;
+  $('policyNote').textContent = !c.sensing
+    ? 'Only interpreted signals — never raw video or vitals — are shared, and only after you consent.'
+    : active ? `The camera turns off after ${idleMin || 5} min without chatting. Only interpreted signals are shared.`
+      : s.sensing && s.sensing.paused ? 'Camera paused. It stays off — even when you chat — until you resume.'
+        : 'Permission remembered. The camera turns on when a chat starts or the AI asks.';
+}
 $('consentBtn').onclick = async () => {
-  if (!consent) return openConsent();
-  await api('/api/revoke', { scopes: ['sensing'] });
+  const action = sensingInfo.state === 'error' ? 'start' : cameraAction();
+  if (action === 'allow') return openConsent();
+  await api('/api/sensing', { action });
   poll();
 };
+$('forgetConsent').onclick = async () => {
+  await api('/api/revoke', {});
+  try { localStorage.removeItem('attune_consent_asked'); } catch {}
+  poll();
+};
+// Ask once: the first chat message opens the dialog if the person has never answered it.
+function askedBefore() { try { return localStorage.getItem('attune_consent_asked') === '1'; } catch { return false; } }
+function rememberAsked() { try { localStorage.setItem('attune_consent_asked', '1'); } catch {} }
 $('chatForm').onsubmit = async (e) => {
   e.preventDefault();
   const text = $('msg').value.trim(); if (!text) return;
   $('msg').value = ''; addMsg(text, 'user');
+  if (!consent && !askedBefore()) openConsent();
   $('msg').disabled = true;
   let r;
   try { r = await api('/api/chat', { message: text }); } catch { r = { error: 'offline', errorText: "Can't reach Attune's local server." }; }

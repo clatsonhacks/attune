@@ -32,6 +32,7 @@
       <header class="topbar">
         <div class="htitle" id="htitle">Companion</div>
         <div class="controls">
+          <span id="camPill" class="pill cam-pill" hidden title="The camera is on"><span class="rec"></span>Camera on</span>
           <span id="moodPill" class="pill mood-pill" title="Colors follow the mood of the conversation"><span class="mdot"></span><span id="moodName">calm</span></span>
           <label class="switch" title="Private — don't store any memory for this conversation">
             <input type="checkbox" id="incognito" /><span class="track"></span><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg><em>Private</em>
@@ -89,6 +90,7 @@
             <div class="readout">
               <div class="state-word" id="state">connecting</div>
               <div class="sub"><span id="pulse">—</span> <small>bpm</small> · <span id="confLabel">signal —</span></div>
+              <div class="cam-hint" id="camHint" hidden></div>
             </div>
             <div class="signals" id="signals"></div>
             <div class="scroll-host slot-host" id="slotHost"><div class="slot" id="slot">
@@ -106,10 +108,11 @@
                 <div class="evidence" id="evidence"></div>
               </div>
             </div></div>
-            <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Grant consent to sense</span></button>
+            <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Allow camera sensing</span></button>
+            <button class="linkish" id="forgetConsent" hidden>Forget camera permission</button>
             <p class="fineprint warn" id="sensorError" hidden></p>
             <p class="fineprint" id="aiNote" hidden>Sensing is on, but sharing with the AI is off — replies won't use your body signal.</p>
-            <p class="fineprint">Only interpreted signals — never raw video or vitals — are shared, and only after you consent.</p>
+            <p class="fineprint" id="policyNote">Only interpreted signals — never raw video or vitals — are shared, and only after you consent.</p>
           </section>
 
           <section class="conversation glass">
@@ -157,8 +160,9 @@
   <!-- Consent: nothing is measured until the person starts it here -->
   <div class="dlg-back" id="consentDlg" hidden>
     <div class="dlg glass" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
-      <h2 id="consentTitle">Before Attune turns on your camera</h2>
+      <h2 id="consentTitle">Let Attune use your camera?</h2>
       <p class="dlg-sub">Attune uses your camera and Presage SmartSpectra to estimate physiological signals. It is not a medical or emotion-detection tool, and readings can be wrong.</p>
+      <p class="dlg-note"><b>You only answer this once.</b> Attune remembers your choice and turns the camera on by itself when a chat starts or when the AI asks for a reading, and off again after 5 minutes without chatting. A <b>Camera on</b> badge shows whenever it runs. You can pause it, or forget this permission, at any time.</p>
       <label class="opt"><input type="checkbox" id="cSensing" /><span><b>Camera sensing</b><small>Video is processed on this device by the SmartSpectra SDK. Attune does not send video or raw measurements to its own servers. You can pause any time.</small></span></label>
       <label class="opt"><input type="checkbox" id="cPresage" /><span><b>I understand Presage processing</b><small>The Presage SDK contacts Presage services for sign-in and automatic Insights, which can include physiological measurements. See <a href="https://api.physiology.presagetech.com/privacypolicy" target="_blank" rel="noopener">Presage's privacy policy</a>. Required to start.</small></span></label>
       <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion (an AI model on Groq) receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
@@ -166,7 +170,7 @@
       <p class="fineprint warn" id="consentErr" hidden></p>
       <div class="dlg-actions">
         <button class="mini" id="consentCancel">Not now</button>
-        <button class="cta" id="consentStart" disabled><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-consent"/></svg>Start sensing</button>
+        <button class="cta" id="consentStart" disabled><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-consent"/></svg>Allow and start</button>
       </div>
     </div>
   </div>
