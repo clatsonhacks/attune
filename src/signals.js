@@ -19,8 +19,13 @@ function createSignals({ simulated = true } = {}) {
   let pulse = null, pulseConf = 0, expr = 'unknown', exprConf = 0;
   let breathAcc = 0, breathVal = null, breathPaused = false;
   let hrvAcc = 0, hrvVal = null;
+  let measuredBreath = null, measuredBreathConf = 0, measuredHrv = null, measuredHrvConf = 0;
 
   function ingest(s) {
+    measuredBreath = typeof s.breathingRate === 'number' && s.breathingRate > 0 ? s.breathingRate : null;
+    measuredBreathConf = s.breathingConfidence || 0;
+    measuredHrv = typeof s.hrvMs === 'number' && s.hrvMs > 0 ? s.hrvMs : null;
+    measuredHrvConf = s.hrvConfidence || 0;
     const pOk = typeof s.pulseBpm === 'number' && s.pulseBpm >= 40 && s.pulseBpm <= 110 && (s.pulseConfidence == null || s.pulseConfidence >= 0.4);
     pulse = pOk ? s.pulseBpm : null;
     pulseConf = s.pulseConfidence == null ? (pOk ? 0.85 : 0) : s.pulseConfidence;
@@ -54,9 +59,16 @@ function createSignals({ simulated = true } = {}) {
         detail: 'Simulated in demo mode (derived from pulse, not measured). Heart-rate variability needs a full 60-second window.' },
     ];
     if (!simulated) {
+      // Real mode: only SDK-measured values, never the pulse-derived simulation.
+      const measured = { breathing: measuredBreath != null ? { v: `${Math.round(measuredBreath)}/min`, c: measuredBreathConf } : null,
+        hrv: measuredHrv != null ? { v: `${Math.round(measuredHrv)} ms`, c: measuredHrvConf } : null };
       for (const sig of list.slice(2)) {
-        Object.assign(sig, { value: 'unavailable', status: 'idle', confidence: 0,
-          detail: 'Not measured yet — real SDK breathing/HRV metrics are not wired in, so nothing is shown rather than a guess.' });
+        const m = measured[sig.id];
+        if (m) Object.assign(sig, { value: m.v, status: 'ready', confidence: m.c,
+          detail: sig.id === 'breathing' ? 'Measured by SmartSpectra (breathing rate). Needs stillness; unreliable while talking.'
+            : 'Measured by SmartSpectra (RMSSD over a recent window of pulse data).' });
+        else Object.assign(sig, { value: 'waiting', status: 'gathering', confidence: 0,
+          detail: 'Waiting for SmartSpectra to report a measured value — nothing is shown rather than a guess.' });
       }
     }
     return list;
