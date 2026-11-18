@@ -1,6 +1,6 @@
 {
   "name": "attune-sense",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Attune — a portable body-sense MCP connector for AI. Interprets contactless vitals (Presage SmartSpectra) into behavioral nudges, not numbers. Prototype scaffold.",
   "type": "commonjs",
@@ -11,13 +11,15 @@
     "test:adapter": "node test-adapter.js",
     "connector": "node src/server.js",
     "web": "node src/webServer.js",
-    "test": "node --test \"tests/**/*.test.js\" && node test-adapter.js && node test-connector.js"
+    "test": "node --test \"tests/**/*.test.js\" && node test-adapter.js && node test-connector.js",
+    "web:demo": "node src/webServer.js --demo"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.10.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@smartspectra/node-sdk": "3.5.0",
-    "zod": "3.25.76",
-    "protobufjs": "7.6.6"
+    "protobufjs": "7.6.6",
+    "zod": "3.25.76"
   },
   "license": "UNLICENSED",
   "engines": {
