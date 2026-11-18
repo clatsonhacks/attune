@@ -7,7 +7,35 @@ const api = (p, body) =>
     method: body ? 'POST' : 'GET',
     headers: { 'x-attune-token': TOKEN, ...(body ? { 'content-type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
-  }).then((r) => r.json());
+  }).then((r) => {
+    if (r.status === 401) { staleToken(); throw new Error('stale session token'); }
+    try { sessionStorage.removeItem('attune_reloads'); } catch {}
+    return r.json();
+  });
+
+// The server makes a new session token every time it starts. A tab left open across a restart still holds
+// the old one, so reload (at most twice in a row) to get the new token instead of showing errors.
+let reloading = false;
+function staleToken() {
+  if (reloading) return;
+  let n = 0;
+  try { n = Number(sessionStorage.getItem('attune_reloads')) || 0; sessionStorage.setItem('attune_reloads', String(n + 1)); } catch {}
+  if (n < 2) { reloading = true; location.reload(); }
+}
+
+/* ---------- Scrolling (OverlayScrollbars library) ---------- */
+const OverlayScrollbars = window.OverlayScrollbarsGlobal && window.OverlayScrollbarsGlobal.OverlayScrollbars;
+const REDUCED_MOTION = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SCROLL_OPTS = { overflow: { x: 'hidden' }, scrollbars: { theme: 'os-theme-attune', autoHide: 'leave', autoHideDelay: 500, clickScroll: true } };
+/** Thin overlay scrollbars on `host`; `viewport` (if given) stays the element that scrolls and holds content. */
+if (OverlayScrollbars) {
+  const nonce = (document.querySelector('meta[name="attune-style-nonce"]') || {}).content;
+  if (nonce) OverlayScrollbars.nonce(nonce); // must be set before the first instance is created
+}
+function scrollArea(host, viewport, opts = SCROLL_OPTS) {
+  if (!OverlayScrollbars || !host) return;
+  OverlayScrollbars(viewport ? { target: host, elements: { viewport, content: false } } : host, opts);
+}
 
 /* ---------- Icons (assets/icons.svg sprite) ---------- */
 const icon = (id, cls = '') => `<svg class="ic ${cls}" aria-hidden="true"><use href="assets/icons.svg#i-${id}"/></svg>`;
@@ -122,6 +150,7 @@ async function loadConnectors() {
     meta.append(el('span', null, detail));
     if (c.id === 'claude-desktop' && !c.registered) {
       const pre = el('pre', 'snippet', c.snippet);
+      requestAnimationFrame(() => scrollArea(pre, null, { overflow: { y: 'hidden' }, scrollbars: SCROLL_OPTS.scrollbars }));
       const copy = el('button', 'mini', 'Copy');
       copy.onclick = async () => { try { await navigator.clipboard.writeText(c.snippet); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select and copy manually'; } };
       meta.append(pre, copy);
@@ -183,7 +212,9 @@ function addMsg(text, who, opts = {}) {
     fix.onclick = async () => { await api('/api/correction', { wasAccurate: false }); fix.textContent = "thanks — I'll be gentler"; fix.disabled = true; };
     el.appendChild(fix);
   }
-  $('log').appendChild(el); $('log').scrollTop = $('log').scrollHeight;
+  const stick = who === 'user' || follow;
+  $('log').appendChild(el);
+  if (stick) scrollToLatest(); else $('jumpLatest').hidden = false;
 }
 async function poll() {
   try {
@@ -221,9 +252,28 @@ async function poll() {
     if (s.ai) renderAi(s.ai);
     lastState = s;
   } catch (e) {
-    if (!(e instanceof TypeError && /fetch/i.test(e.message))) console.error('poll failed:', e); // network blips stay quiet
+    if (!(e instanceof TypeError && /fetch/i.test(e.message)) && !/stale session token/.test(e.message)) console.error('poll failed:', e);
   }
 }
+/* ---------- Chat scrolling ---------- */
+// "follow" = keep the newest message in view. Only the person scrolling up turns it off; our own smooth
+// scrolling (still in flight when a reply arrives) must not.
+let follow = true, autoScrolling = false, autoTimer = null;
+function nearBottom() { const v = $('log'); return v.scrollHeight - v.scrollTop - v.clientHeight < 80; }
+function scrollToLatest() {
+  follow = true;
+  autoScrolling = true;
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => { autoScrolling = false; }, 800);
+  $('log').scrollTo({ top: $('log').scrollHeight, behavior: REDUCED_MOTION ? 'auto' : 'smooth' });
+  $('jumpLatest').hidden = true;
+}
+$('log').addEventListener('scroll', () => {
+  if (nearBottom()) { follow = true; $('jumpLatest').hidden = true; }
+  else if (!autoScrolling) follow = false;
+}, { passive: true });
+$('jumpLatest').onclick = scrollToLatest;
+
 /* ---------- AI status ---------- */
 function renderAi(ai) {
   const t = ai.mode === 'demo' ? 'Demo replies (scripted)' : ai.connected ? `Groq · ${ai.model}` : 'AI not connected';
@@ -283,6 +333,10 @@ $('chatForm').onsubmit = async (e) => {
 };
 
 /* ---------- boot ---------- */
+scrollArea($('logHost'), $('log'));
+scrollArea($('slotHost'), $('slot'));
+scrollArea(document.querySelector('#consentDlg .dlg'));
+scrollArea($('dayDetail'));
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
 addMsg("Hi — I'm here with you. If you turn on sensing (and choose to share it with me), I'll pay attention to how you're doing, not just what you say.", 'bot');
