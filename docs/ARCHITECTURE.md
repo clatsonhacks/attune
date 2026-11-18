@@ -39,7 +39,7 @@ Describes what is in the repo today. The target design and milestones are in
 | `src/privacy/capabilities.js` | Per-consumer read handles, revoked together with their consent scope. |
 | `src/session.js` | Interpreter + signal tiles + memory wiring. `getApprovedContext()` strips evidence/measurements. |
 | `src/memory.js` | Local JSON store of interpretations (plaintext for now; encryption is plan M5). Writes only with `memory` scope. |
-| `src/companion.js` | Demo reply logic (scripted), optional Anthropic API path via `ATTUNE_ANTHROPIC_KEY`. |
+| `src/companion.js` | Demo reply logic (scripted), real mode: Groq chat completions (`GROQ_API_KEY`, default `openai/gpt-oss-120b`) with conversation history. |
 
 ## Runtime and SDK versions (pinned, plan M0-03)
 

@@ -13,13 +13,13 @@ and off by default. An AI cannot grant any of this.
 ## Run it (real)
 ```bash
 npm install
-cp .env.example .env    # set SMARTSPECTRA_API_KEY and ANTHROPIC_API_KEY
-npm run web             # http://localhost:3000 — real webcam (SmartSpectra) + Claude (claude-opus-5-5)
+cp .env.example .env    # set SMARTSPECTRA_API_KEY and GROQ_API_KEY
+npm run web             # http://localhost:3000 — real webcam (SmartSpectra) + Groq (openai/gpt-oss-120b)
 npm test                # privacy, insights, context-bridge and real-mode tests
 ```
-Open the page, tap *Grant consent to sense*, tick the boxes (tick *Share with the AI* to let Claude use the
-signal) and talk. Chat messages go to Anthropic's API; body guidance is added only when you allowed sharing.
-Without `ANTHROPIC_API_KEY` the chat says the AI isn't connected — it never makes up replies.
+Open the page, tap *Grant consent to sense*, tick the boxes (tick *Share with the AI* to let the AI use the
+signal) and talk. Chat messages go to Groq's API; body guidance is added only when you allowed sharing.
+Without `GROQ_API_KEY` the chat says the AI isn't connected — it never makes up replies.
 
 **Demo mode** (no camera, no keys): `npm run web:demo` — synthetic vitals cycling calm→stress→recovery and
 scripted replies, with its own memory file.
