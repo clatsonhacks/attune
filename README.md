@@ -70,7 +70,9 @@ with pairing and isn't supported yet. Then ask the AI to call `get_body_context`
 - `src/memory.js` — local-first store (interpretations only; encryption is M5).
 - `src/adapter/mock.js` — synthetic stream · `src/adapter/smartspectra.js` — real SDK adapter.
 - `src/server.js` — the MCP connector · `SKILL.md` — how an AI uses it.
-- `tests/**/*.test.js` — `node:test` suite (privacy, insights, context bridge) · `run-demo.js` · `test-connector.js` · `test-adapter.js`.
+- `tests/**/*.test.js` — `node:test` suite (privacy, insights, context bridge)
+- UI libraries (installed with npm, served locally — no CDN calls): **OverlayScrollbars** (scrollbars),
+  **Lucide** + **Simple Icons** (icon sprite, rebuilt with `npm run build:icons` into `web/assets/icons.svg`). · `run-demo.js` · `test-connector.js` · `test-adapter.js`.
 
 ## Use the real SmartSpectra SDK
 `@smartspectra/node-sdk` is already a dependency (prebuilt native runtime for win32-x64, darwin-arm64,
