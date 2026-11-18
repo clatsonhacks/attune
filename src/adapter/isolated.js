@@ -4,7 +4,7 @@
  * the API key and native code never live in the server process that talks to browsers and AIs.
  *
  *  - Narrow IPC (see worker.js); every message from the worker is validated against an allowlist.
- *  - The worker gets a minimal environment (no unrelated secrets such as ATTUNE_ANTHROPIC_KEY).
+ *  - The worker gets a minimal environment (no unrelated secrets such as GROQ_API_KEY).
  *  - A worker crash or exit while running is reported through onError → sensing goes to "error".
  *
  * This is process separation, not an OS sandbox; see docs/THREAT_MODEL.md.

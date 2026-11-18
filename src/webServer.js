@@ -1,6 +1,6 @@
 'use strict';
 /*
- * Attune — local backend + web UI. Real by default (SmartSpectra SDK + Claude); demo only with --demo.
+ * Attune — local backend + web UI. Real by default (SmartSpectra SDK + Groq); demo only with --demo.
  *
  * Privacy boundary (see docs/DATA_FLOW.md):
  *  - The sensor (the real SmartSpectra SDK, or synthetic vitals in demo mode) does NOT start at
@@ -213,7 +213,7 @@ if (require.main === module) {
   const app = createApp({ port });
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await app.close(); process.exit(0); });
   app.server.listen(port, '127.0.0.1', () => {
-    process.stdout.write(`[attune] http://localhost:${port}  (${isDemo() ? 'DEMO mode: synthetic vitals, scripted replies' : 'real mode: SmartSpectra + Claude'}; sensing starts only after consent)\n`);
+    process.stdout.write(`[attune] http://localhost:${port}  (${isDemo() ? 'DEMO mode: synthetic vitals, scripted replies' : 'real mode: SmartSpectra + Groq'}; sensing starts only after consent)\n`);
   });
 }
 

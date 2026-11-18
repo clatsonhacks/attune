@@ -6,7 +6,7 @@
  */
 const { createMockAdapter } = require('./mock');
 
-// Pick up SMARTSPECTRA_API_KEY / ATTUNE_ADAPTER / ANTHROPIC_API_KEY from a local .env (never committed).
+// Pick up SMARTSPECTRA_API_KEY / ATTUNE_ADAPTER / GROQ_API_KEY from a local .env (never committed).
 try { process.loadEnvFile(); } catch {}
 
 /** 'smartspectra' (real, default) or 'mock' (demo). */
