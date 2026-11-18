@@ -60,10 +60,12 @@ before replying — see `SKILL.md` for the usage contract.
 - `src/session.js` — standing body-context for the AI (poll-safe) + memory wiring.
 - `src/privacy/consent.js` — trusted consent scopes · `src/privacy/localGuard.js` — localhost/token/origin guard.
 - `src/sensing.js` — the only place the sensor starts/stops; drops late callbacks after revoke.
+- `src/adapter/isolated.js` + `worker.js` — the real SDK runs in its own process (`ATTUNE_ISOLATE=0` to disable).
+- `src/contextBridge.js` — what any AI reads: fresh, sequenced, never blocked on Insights · `src/insights/` — Presage Insight decoder + normalizer.
 - `src/memory.js` — local-first store (interpretations only; encryption is M5).
 - `src/adapter/mock.js` — synthetic stream · `src/adapter/smartspectra.js` — real SDK adapter.
 - `src/server.js` — the MCP connector · `SKILL.md` — how an AI uses it.
-- `tests/privacy/*.test.js` — `node:test` suite · `run-demo.js` · `test-connector.js` · `test-adapter.js`.
+- `tests/**/*.test.js` — `node:test` suite (privacy, insights, context bridge) · `run-demo.js` · `test-connector.js` · `test-adapter.js`.
 
 ## Use the real SmartSpectra SDK
 `@smartspectra/node-sdk` is already a dependency (prebuilt native runtime for win32-x64, darwin-arm64,
@@ -75,10 +77,11 @@ npm run web                   # or: npm run connector
 ```
 `src/adapter/smartspectra.js` creates a `SmartSpectraSDK` on the default webcam, requests pulse rate,
 expressions, talking and blinking (telemetry off), and maps each decoded `Metrics` packet to our sample
-shape (`cardio.pulseRate`, `face.expression`, `face.talking`; confidence 0–100 → 0–1). Breathing/HRV show
-"unavailable" in real mode (the demo values are simulated from pulse). `npm run test:adapter` checks the mapping against the SDK's own protobuf decoder.
+shape (`cardio.pulseRate`, `cardio.hrv`, `breathing.rate`, `face.expression`, `face.talking`; confidence 0–100 →
+0–1). It requests the breathing + cardio sets Presage needs for **Insights**: Presage sends automatic check-ins
+(about 15 s after start, then every 60 s) and you can ask for one (*Ask for a check-in*, max 1 per 30 s). You see
+the full text; the AI only gets a short number-free note. `npm run test:adapter` checks the mapping against the SDK's own protobuf decoder.
 
 ## Status
-Plan M0 (baseline, docs, threat model) ✅ · M1 consent + local boundary: core done (see the plan for what's left:
-SDK worker-process isolation, network audit, device-failure tests) · next: M2 Insights, M3 Context Bridge,
-M4 Attune Live voice.
+Plan M0 ✅ · M1 consent + local boundary + worker isolation ✅ · M2 Insights ✅ (live-webcam validation pending) ·
+M3 Context Bridge ✅ · next: M4 Attune Live voice.

@@ -3,7 +3,7 @@
 **Repository:** [`clatsonhacks/attune`](https://github.com/clatsonhacks/attune) (private)  
 **Baseline:** `main`, reviewed through commit `571e0b9` (13 Nov 2026)  
 **Plan date:** 18 Nov 2026  
-**Status:** In progress — M0 done, M1 core done (18 Nov 2026). Unchecked items below are still open.  
+**Status:** In progress — M0, M1, M3 done; M2 done except live-webcam validation (18 Nov 2026). Unchecked items below are still open.  
 **Core constraint:** **Keep Presage SmartSpectra as the sensing SDK.** Disclose Presage Insights processing clearly, and let users opt into Attune sensing and separately into sharing approved context with an AI.
 
 ---
@@ -174,31 +174,31 @@ Do a legal/privacy review before releasing final language.
 - [x] `M1-01` Move SDK startup **out of module/server boot** and behind trusted user consent; prevent AI-driven `grant_consent` from authorizing a human camera session.
 - [x] `M1-02` Implement the disclosure/consent state machine; separate sensing, AI context sharing, memory and optional diagnostics.
 - [x] `M1-03` *(HTTP guarded; IPC for the packaged app comes with M5)* Bind any HTTP service to `127.0.0.1`, add short-lived random session authentication, strict origin/CSRF protections and localhost-only policy; prefer authenticated IPC to HTTP in packaged desktop builds.
-- [ ] `M1-04` Isolate the SDK in a worker/child process; restrict its IPC to `start`, `stop`, `status`, valid samples and Insight notifications. No renderer-side unrestricted SDK handles.
+- [x] `M1-04` *(child-process worker with allowlisted IPC + minimal env; not an OS sandbox)* Isolate the SDK in a worker/child process; restrict its IPC to `start`, `stop`, `status`, valid samples and Insight notifications. No renderer-side unrestricted SDK handles.
 - [x] `M1-05` Remove raw metric exposure before consent and remove pulse-change numbers from all **AI-facing** outputs. If showing a numeric pulse to the user, make it clear that it is locally measured and consented.
 - [ ] `M1-06` *(partial: logs carry no body data, AI paths are number-free; network audit not done)* Disable raw body data, voice transcripts and API secrets in logs, error telemetry and crash reports; audit actual SDK/service traffic and publish a precise data-flow table.
-- [ ] `M1-07` *(partial: revoke, late callbacks, start failure, token/origin, MCP covered in `tests/privacy`; crash, OS permission, device disconnect, restart still open)* Add tests for revoke, crash, OS permission failure, device disconnect, restart, and late callbacks.
+- [x] `M1-07` *(`tests/privacy`: revoke, late callbacks, worker crash, device disconnect, OS permission failure, restart)* Add tests for revoke, crash, OS permission failure, device disconnect, restart, and late callbacks.
 
 **Done when:** No camera activity occurs before human consent; revoke reliably releases it; unauthorized chat/MCP clients cannot enable sensing or retrieve body context.
 
 ### M2 — Real SmartSpectra metrics and Insights integration (P0)
 
-- [ ] `M2-01` Request the SDK's documented cardio + breathing metric sets; preserve low-confidence/invalid states.
-- [ ] `M2-02` Add a pinned, tested protobuf decoder for the Presage `Insight` schema; register a single `insight` callback.
-- [ ] `M2-03` Distinguish automatic versus requested Insights via request IDs and event metadata; handle missing, error, duplicate, delayed and out-of-order responses.
+- [x] `M2-01` Request the SDK's documented cardio + breathing metric sets; preserve low-confidence/invalid states.
+- [x] `M2-02` *(schema from Presage Data Types docs, protobufjs 7.6.6)* Add a pinned, tested protobuf decoder for the Presage `Insight` schema; register a single `insight` callback.
+- [x] `M2-03` *(requested vs automatic by request id; errors/duplicates/out-of-order handled in the bridge)* Distinguish automatic versus requested Insights via request IDs and event metadata; handle missing, error, duplicate, delayed and out-of-order responses.
 - [x] `M2-04` *(done early: real mode shows breathing/HRV as unavailable)* Remove simulated breathing/HRV from real mode, while retaining clearly marked mock demo data.
-- [ ] `M2-05` Validate real webcam baseline, face-not-found, poor lighting, subject movement, camera contention, SDK errors and long-running sessions on Windows.
+- [ ] `M2-05` *(partial: face-not-found verified on Windows; face-in-view, lighting, movement, long runs not yet)* Validate real webcam baseline, face-not-found, poor lighting, subject movement, camera contention, SDK errors and long-running sessions on Windows.
 - [ ] `M2-06` Test when automatic Insights arrive and whether SDK auth/service traffic matches the consent disclosure. Do **not** promise that SDK Insights can be disabled without documentation proving it.
 
 **Done when:** Recorded/video fixture tests and at least one physical webcam run confirm measured inputs and async Insight behavior; no simulated measurement is mislabeled as real.
 
 ### M3 — Non-blocking Context Bridge (P0)
 
-- [ ] `M3-01` Implement `src/contextBridge.js`: latest snapshot, TTL, event sequencing, confidence, cooldown, dedupe, consent scope.
-- [ ] `M3-02` Implement `src/insights/decoder.js` and `src/insights/normalizer.js`; strip medical certainty, raw measurements, identifying text and unsolicited instructions before model sharing.
-- [ ] `M3-03` Add `getApprovedContext(sessionCapability)` and `subscribeApprovedContext(sessionCapability)`; reject unauthorized consumers and stop subscriptions immediately on revoke.
-- [ ] `M3-04` Extend mock source with fake callbacks that arrive late, never arrive, or conflict with the current state.
-- [ ] `M3-05` Instrument **only non-sensitive** queue delays, dropped updates, permission-denied counters and context-append delivery/ack states. Require explicit diagnostics opt-in if logs could identify a user.
+- [x] `M3-01` Implement `src/contextBridge.js`: latest snapshot, TTL, event sequencing, confidence, cooldown, dedupe, consent scope.
+- [x] `M3-02` Implement `src/insights/decoder.js` and `src/insights/normalizer.js`; strip medical certainty, raw measurements, identifying text and unsolicited instructions before model sharing.
+- [x] `M3-03` Add `getApprovedContext(sessionCapability)` and `subscribeApprovedContext(sessionCapability)`; reject unauthorized consumers and stop subscriptions immediately on revoke.
+- [x] `M3-04` Extend mock source with fake callbacks that arrive late, never arrive, or conflict with the current state.
+- [x] `M3-05` *(counters only, `/api/bridge/stats`)* Instrument **only non-sensitive** queue delays, dropped updates, permission-denied counters and context-append delivery/ack states. Require explicit diagnostics opt-in if logs could identify a user.
 
 **Done when:** Voice can get an immediate cache read; a slow or failed Presage Insight never stops conversation; no data crosses sessions or revoked scopes.
 
@@ -389,7 +389,7 @@ Directory names are recommendations, not existing paths.
 
 ## 11. Next development action
 
-**Done:** M0 + M1 core — consent-controlled sensing foundation, on `main` (small commits).  
-**Next:** finish M1-04 (SDK worker process) and M1-07, then M2 (Insights) and M3 (Context Bridge).
+**Done:** M0, M1, M3; M2 apart from live-webcam validation (M2-05, M2-06).  
+**Next:** a live webcam run with a face in view (M2-05/06), then M4 Attune Live voice on top of `contextBridge.subscribe()`.
 
 **First concrete code task:** Refactor `src/webServer.js` and `src/server.js` so the SDK cannot start until a trusted local user explicitly consents, and so an AI/MCP call cannot grant consent. Add tests covering before-consent, revoke and SDK startup failure. This removes the most serious privacy gap before adding voice or additional Insight integration.
