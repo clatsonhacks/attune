@@ -242,3 +242,12 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .cta:disabled { opacity:.45; cursor:not-allowed; transform:none; box-shadow:none; }
 .fineprint.warn { color:#b5443f; }
 .dd-actions { margin-top:12px; }
+
+/* ===== Presage check-in ===== */
+.insight { flex:none; width:100%; text-align:left; border-radius:16px; padding:12px 14px; background:rgba(255,255,255,.5); border:1px solid var(--glass-brd); }
+.insight-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.insight-head .nudge-label { margin-bottom:0; white-space:nowrap; }
+.insight-head #insightMeta { font-size:13px; color:var(--muted); text-transform:capitalize; white-space:nowrap; }
+.insight-text { font-size:15px; line-height:1.5; margin:4px 0 10px; }
+.insight-status { display:block; font-size:13px; color:var(--muted); margin-top:6px; }
+.insight-status:empty { display:none; }

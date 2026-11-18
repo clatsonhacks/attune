@@ -132,7 +132,7 @@ function renderSignals(sigs) {
   if (selectedSignal) { const a = lastSignals.find((x) => x.id === selectedSignal); a ? showDetail(a) : ($('signalDetail').hidden = true); }
 }
 function updateSlot() {
-  $('slotEmpty').hidden = !$('signalDetail').hidden || !$('nudgeBox').hidden;
+  $('slotEmpty').hidden = !$('signalDetail').hidden || !$('nudgeBox').hidden || !$('insightBox').hidden;
 }
 function showDetail(a) {
   const pct = Math.round((a.confidence || 0) * 100);
@@ -179,7 +179,15 @@ async function poll() {
     $('confLabel').textContent = !consent ? 'tap to begin' : st === 'starting' ? 'starting…' : st === 'calibrating' ? 'calibrating…' : st === 'unclear' ? 'signal low' : 'signal ' + Math.round((s.confidence || 0) * 100) + '%';
     renderSignals(s.signals);
     proposeMood(moodFor(s));
-    $('consentLabel').textContent = consent ? 'Sensing on — tap to pause' : 'Grant consent to sense';
+    const active = s.sensing && s.sensing.state === 'active';
+    const errored = s.sensing && s.sensing.state === 'error';
+    if (!errored) $('consentLabel').textContent = consent ? 'Sensing on — tap to pause' : 'Grant consent to sense';
+    $('insightBox').hidden = !active;
+    if (s.insight) {
+      if ($('insightText').textContent !== s.insight.text) $('insightText').textContent = s.insight.text;
+      $('insightMeta').textContent = `${s.insight.origin} · ${new Date(s.insight.receivedAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (errored) $('consentLabel').textContent = 'Sensor stopped — tap to reset';
     const iconHref = `assets/icons.svg#i-${consent ? 'pause' : 'consent'}`;
     if ($('consentIcon').getAttribute('href') !== iconHref) $('consentIcon').setAttribute('href', iconHref);
     $('consentBtn').classList.toggle('on', consent);
@@ -188,8 +196,17 @@ async function poll() {
     if (show) { $('directive').textContent = s.directive; $('evidence').textContent = (s.evidence || []).join(' · '); }
     updateSlot();
     lastState = s;
-  } catch {}
+  } catch (e) {
+    if (!(e instanceof TypeError && /fetch/i.test(e.message))) console.error('poll failed:', e); // network blips stay quiet
+  }
 }
+/* ---------- Presage check-in (user-initiated Insight; the answer arrives later) ---------- */
+$('askInsight').onclick = async () => {
+  const r = await api('/api/insight', {});
+  $('insightStatus').textContent = r.requestId != null ? 'Asked Presage — the answer will appear above.' : 'Please wait 30 seconds between check-ins.';
+  setTimeout(() => { $('insightStatus').textContent = ''; }, 6000);
+};
+
 /* ---------- Consent dialog (the only way sensing can start) ---------- */
 function openConsent() {
   $('cSensing').checked = false; $('cPresage').checked = false;

@@ -93,6 +93,12 @@
             <div class="slot" id="slot">
               <div class="slot-empty" id="slotEmpty">Tap a signal to see how it's read.</div>
               <div class="signal-detail" id="signalDetail" hidden></div>
+              <div class="insight" id="insightBox" hidden>
+                <div class="insight-head"><span class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Check-in</span><span id="insightMeta"></span></div>
+                <div id="insightText" class="insight-text">No check-in yet — Presage sends one automatically after about 15 seconds.</div>
+                <button class="mini" id="askInsight"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Ask for a check-in</button>
+                <span class="insight-status" id="insightStatus"></span>
+              </div>
               <div class="nudge" id="nudgeBox" hidden>
                 <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>whisper to the AI</div>
                 <div id="directive"></div>
