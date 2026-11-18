@@ -93,20 +93,43 @@ $('calPrev').onclick = () => { if (--calView.m < 0) { calView.m = 11; calView.y-
 $('calNext').onclick = () => { if (++calView.m > 11) { calView.m = 0; calView.y++; } renderCalendar(); };
 $('forgetAll').onclick = async () => { await api('/api/forget'); selDay = null; await loadCalendar(); $('dayDetail').innerHTML = '<div class="dd-empty">All memory cleared.</div>'; };
 
-/* ---------- Connectors ---------- */
-const CONN_ICONS = { claude: 'claude', chatgpt: 'bot', mcp: 'cpu' };
+/* ---------- Connectors (real status, read-only) ---------- */
+const CONN_ICONS = { 'claude-desktop': 'claude', chatgpt: 'bot' };
+const CONN_TEXT = {
+  registered: 'Registered', not_registered: 'Not set up', no_config: 'Claude Desktop config not found',
+  unreadable: 'Config file could not be read', not_supported: 'Not available yet',
+};
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 async function loadConnectors() {
   const r = await api('/api/connectors');
-  $('connList').innerHTML = r.connectors.map((c) =>
-    `<div class="conn-row ${c.connected ? 'on' : ''}" data-id="${c.id}"><div class="cava">${icon(CONN_ICONS[c.id] || 'connectors')}</div><div class="cmeta"><b>${c.name}</b><span>${c.desc}</span></div><span class="cstatus">${c.connected ? 'connected' : 'not connected'}</span><button class="cbtn">${icon(c.connected ? 'unlink' : 'link', 'sm')}${c.connected ? 'Disconnect' : 'Connect'}</button></div>`
-  ).join('');
+  const list = $('connList');
+  list.replaceChildren();
+  for (const c of r.connectors) {
+    const row = el('div', `conn-row ${c.registered ? 'on' : ''}`);
+    const ava = el('div', 'cava'); ava.innerHTML = icon(CONN_ICONS[c.id] || 'connectors');
+    const meta = el('div', 'cmeta');
+    meta.append(el('b', null, c.name));
+    let detail = c.note || '';
+    if (c.id === 'claude-desktop') {
+      if (c.registered) {
+        const cs = c.consent || {};
+        detail = `Consent in your config: sensing ${cs.sensing ? 'on' : 'off'} · AI sharing ${cs.aiSharing ? 'on' : 'off'} · memory ${cs.memory ? 'on' : 'off'}` +
+          (c.pointsToThisInstall ? '' : ' · points to a different copy of Attune');
+      } else {
+        detail = `Add this to ${c.configPath}, then restart Claude Desktop:`;
+      }
+    }
+    meta.append(el('span', null, detail));
+    if (c.id === 'claude-desktop' && !c.registered) {
+      const pre = el('pre', 'snippet', c.snippet);
+      const copy = el('button', 'mini', 'Copy');
+      copy.onclick = async () => { try { await navigator.clipboard.writeText(c.snippet); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select and copy manually'; } };
+      meta.append(pre, copy);
+    }
+    row.append(ava, meta, el('span', 'cstatus', CONN_TEXT[c.status] || c.status));
+    list.append(row);
+  }
 }
-$('connList').addEventListener('click', async (e) => {
-  const b = e.target.closest('.cbtn'); if (!b) return;
-  const row = b.closest('.conn-row');
-  await api('/api/connectors', { id: row.dataset.id, connected: !row.classList.contains('on') });
-  loadConnectors();
-});
 
 /* ---------- Parallel signal agents ---------- */
 let lastSignals = [], selectedSignal = null;
@@ -195,11 +218,25 @@ async function poll() {
     $('nudgeBox').hidden = !show;
     if (show) { $('directive').textContent = s.directive; $('evidence').textContent = (s.evidence || []).join(' · '); }
     updateSlot();
+    if (s.ai) renderAi(s.ai);
     lastState = s;
   } catch (e) {
     if (!(e instanceof TypeError && /fetch/i.test(e.message))) console.error('poll failed:', e); // network blips stay quiet
   }
 }
+/* ---------- AI status ---------- */
+function renderAi(ai) {
+  const t = ai.mode === 'demo' ? 'Demo replies (scripted)' : ai.connected ? `Claude · ${ai.model}` : 'AI not connected';
+  if ($('aiStatus').textContent !== t) $('aiStatus').textContent = t;
+  $('aiStatus').classList.toggle('bad', ai.mode !== 'demo' && !ai.connected);
+  $('aiDisclosure').hidden = ai.mode === 'demo';
+}
+$('newChat').onclick = async () => {
+  await api('/api/chat/reset', {});
+  $('log').replaceChildren();
+  addMsg("New conversation. What's on your mind?", 'bot');
+};
+
 /* ---------- Presage check-in (user-initiated Insight; the answer arrives later) ---------- */
 $('askInsight').onclick = async () => {
   const r = await api('/api/insight', {});
@@ -235,8 +272,13 @@ $('chatForm').onsubmit = async (e) => {
   e.preventDefault();
   const text = $('msg').value.trim(); if (!text) return;
   $('msg').value = ''; addMsg(text, 'user');
-  const r = await api('/api/chat', { message: text });
-  addMsg(r.reply, 'bot', { by: r.usedBody });
+  $('msg').disabled = true;
+  let r;
+  try { r = await api('/api/chat', { message: text }); } catch { r = { error: 'offline', errorText: "Can't reach Attune's local server." }; }
+  $('msg').disabled = false; $('msg').focus();
+  if (r.error) addMsg(r.errorText || 'The AI could not reply.', 'sys');
+  else addMsg(r.reply, 'bot', { by: r.usedBody });
+  if (r.ai) renderAi(r.ai);
   if (lastState) proposeMood(moodFor({ ...lastState, state: r.state || lastState.state }), true);
 };
 

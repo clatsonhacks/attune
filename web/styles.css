@@ -251,3 +251,12 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .insight-text { font-size:15px; line-height:1.5; margin:4px 0 10px; }
 .insight-status { display:block; font-size:13px; color:var(--muted); margin-top:6px; }
 .insight-status:empty { display:none; }
+
+/* ===== Real mode: AI status, system notes, connector snippet ===== */
+.conv-head { gap:10px; }
+.conv-head .ai-status { margin-left:auto; font-size:13px; color:var(--muted); }
+.conv-head .ai-status.bad { color:#b5443f; font-weight:600; }
+.m.sys { align-self:center; max-width:92%; background:transparent; border:1px dashed color-mix(in srgb,#e2544f 45%,var(--glass-brd)); color:#8a3b37; font-size:15px; text-align:center; }
+.snippet { margin:10px 0 8px; padding:12px 14px; border-radius:12px; background:rgba(255,255,255,.6); border:1px solid var(--glass-brd); font-size:13px; line-height:1.45; overflow-x:auto; white-space:pre; }
+.conn-row { align-items:flex-start; }
+.conn-row .cmeta { min-width:0; }

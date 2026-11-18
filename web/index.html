@@ -112,13 +112,14 @@
           </section>
 
           <section class="conversation glass">
-            <div class="conv-head"><span>Companion</span></div>
+            <div class="conv-head"><span>Companion</span><span class="ai-status" id="aiStatus"></span><button class="mini" id="newChat" title="Start a new conversation"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>New chat</button></div>
             <div id="log" class="log"></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
             </form>
-            <p class="hint" id="hint" hidden>Demo mode (simulated vitals): wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
+            <p class="hint" id="aiDisclosure" hidden>Your messages are sent to Anthropic's API (Claude) to get a reply. Body guidance is added only if you allowed AI sharing — never numbers or video.</p>
+            <p class="hint" id="hint" hidden>Demo mode (simulated vitals, scripted replies): wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
           </section>
         </div>
       </section>
@@ -144,7 +145,7 @@
       <!-- CONNECTORS -->
       <section class="view" id="view-connectors" hidden>
         <div class="connectors glass">
-          <div class="conn-head"><b>Connected platforms</b><span>Attune shares interpreted body-context with the AI you link — never raw video or vitals.</span></div>
+          <div class="conn-head"><b>Use Attune in other AI apps</b><span>Status is read from this computer. Attune never edits another app's settings — you add the connector yourself, and consent stays in your config, not with the AI.</span></div>
           <div id="connList"></div>
         </div>
       </section>
@@ -158,7 +159,7 @@
       <p class="dlg-sub">Attune uses your camera and Presage SmartSpectra to estimate physiological signals. It is not a medical or emotion-detection tool, and readings can be wrong.</p>
       <label class="opt"><input type="checkbox" id="cSensing" /><span><b>Camera sensing</b><small>Video is processed on this device by the SmartSpectra SDK. Attune does not send video or raw measurements to its own servers. You can pause any time.</small></span></label>
       <label class="opt"><input type="checkbox" id="cPresage" /><span><b>I understand Presage processing</b><small>The Presage SDK contacts Presage services for sign-in and automatic Insights, which can include physiological measurements. See <a href="https://api.physiology.presagetech.com/privacypolicy" target="_blank" rel="noopener">Presage's privacy policy</a>. Required to start.</small></span></label>
-      <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
+      <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion (Claude, via Anthropic's API) receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
       <label class="opt"><input type="checkbox" id="cMemory" /><span><b>Remember on this device <em>(optional)</em></b><small>Stores interpretations and corrections locally so later sessions can continue. You can delete any day or everything.</small></span></label>
       <p class="fineprint warn" id="consentErr" hidden></p>
       <div class="dlg-actions">
