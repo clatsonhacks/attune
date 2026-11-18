@@ -24,6 +24,8 @@ const SYSTEM = [
   'unclear, say nothing about their body.',
   'Never mention numbers, never diagnose, never claim to know emotions or detect lies, and never quote the note.',
   'If the user says the read is wrong, accept it without arguing.',
+  'If the check_in_with_body tool is available, use it sparingly — only when a reading would genuinely help and you do',
+  'not already have a recent note. If it says the camera is warming up or not permitted, carry on without mentioning the body.',
 ].join(' ');
 
 /** GROQ_API_KEY, tolerating "GROQ_API_KEY =" style keys produced by a space before "=" in .env. */
@@ -66,6 +68,19 @@ function bodyNote(ctx) {
   return s;
 }
 
+// Lets the model ask for a body reading. Offered only when the person allowed AI sharing.
+const BODY_TOOL = {
+  type: 'function',
+  function: {
+    name: 'check_in_with_body',
+    description:
+      "Turn on the user's camera body-signal reading (they already allowed this) when knowing how they are doing would " +
+      'genuinely help — e.g. they sound stressed, or their words and situation do not match. Returns the current ' +
+      'interpreted reading, or that the camera is warming up (about 20–30 s). Never mention numbers or diagnose.',
+    parameters: { type: 'object', properties: { reason: { type: 'string', description: 'Why a reading would help right now.' } }, required: ['reason'], additionalProperties: false },
+  },
+};
+
 const ERRORS = {
   not_connected: 'The AI is not connected. Add GROQ_API_KEY to .env and restart Attune.',
   forbidden: 'The Groq key does not have access to this model.',
@@ -95,7 +110,35 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
         connected: lastError !== 'not_connected' && (everSucceeded || !!groqKey(env)) };
   }
 
-  async function reply({ message, ctx }) {
+  async function post(key, payload) {
+    let res, body;
+    try {
+      res = await fetchFn(GROQ_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: MODEL, max_completion_tokens: 1024, temperature: 0.7, reasoning_effort: 'low', include_reasoning: false, ...payload }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      body = await res.json().catch(() => ({}));
+    } catch (e) {
+      log(`AI request failed (offline: ${e.name})`);
+      return { error: 'offline' };
+    }
+    if (!res.ok) {
+      const code = classifyStatus(res.status);
+      log(`AI request failed (${code}, HTTP ${res.status})`);
+      return { error: code };
+    }
+    return { body };
+  }
+
+  /**
+   * reply({ message, ctx, onBodyRequest })
+   *  onBodyRequest(reason) — optional. When given, the model may call the `check_in_with_body` tool; the
+   *  callback turns the camera on (if the person allowed it) and returns at once with the current reading or
+   *  "warming up". It must never wait for the camera.
+   */
+  async function reply({ message, ctx, onBodyRequest }) {
     if (demo) return mockReply({ message, ctx });
     const key = groqKey(env);
     if (!key) { lastError = 'not_connected'; return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false }; }
@@ -104,42 +147,40 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
     const note = bodyNote(ctx);
     const system = note ? { role: 'system', content: note } : null;
     const history = turns.flatMap((t) => [t.user, ...(t.system ? [t.system] : []), t.assistant]);
+    const messages = [{ role: 'system', content: SYSTEM }, ...history, user, ...(system ? [system] : [])];
+    const tools = onBodyRequest ? [BODY_TOOL] : null;
 
-    let res, body;
-    try {
-      res = await fetchFn(GROQ_URL, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [{ role: 'system', content: SYSTEM }, ...history, user, ...(system ? [system] : [])],
-          max_completion_tokens: 1024,
-          temperature: 0.7,
-          reasoning_effort: 'low',
-          include_reasoning: false,
-        }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      body = await res.json().catch(() => ({}));
-    } catch (e) {
-      lastError = 'offline';
-      log(`AI request failed (offline: ${e.name})`);
-      return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false };
+    let askedBody = false;
+    let r = await post(key, { messages, ...(tools ? { tools, tool_choice: 'auto' } : {}) });
+    for (let round = 0; !r.error && round < 2; round++) {
+      const msg = r.body.choices && r.body.choices[0] && r.body.choices[0].message;
+      const calls = (msg && Array.isArray(msg.tool_calls) ? msg.tool_calls : []).filter((c) => c && c.function && c.function.name === BODY_TOOL.function.name);
+      if (!calls.length) break;
+      askedBody = true;
+      messages.push({ role: 'assistant', content: msg.content || '', tool_calls: calls });
+      for (const c of calls) {
+        let reason = '';
+        try { reason = String(JSON.parse(c.function.arguments || '{}').reason || ''); } catch {}
+        let result;
+        try { result = await onBodyRequest(reason.slice(0, 200)); } catch { result = { status: 'unavailable' }; }
+        messages.push({ role: 'tool', tool_call_id: c.id, content: JSON.stringify(result) });
+      }
+      // Second pass: answer the person. Tools stay offered only for one more round.
+      r = await post(key, { messages, ...(round === 0 && tools ? { tools, tool_choice: 'auto' } : {}) });
     }
-    if (!res.ok) {
-      lastError = classifyStatus(res.status);
-      log(`AI request failed (${lastError}, HTTP ${res.status})`);
+    if (r.error) {
+      lastError = r.error;
       return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false };
     }
     lastError = null;
     everSucceeded = true;
 
-    const choice = body.choices && body.choices[0];
+    const choice = r.body.choices && r.body.choices[0];
     const text = choice && choice.message && typeof choice.message.content === 'string' ? choice.message.content.trim() : '';
-    if (!text) return { reply: "Sorry — I lost my words there. Could you say that again?", usedBody: false, empty: true };
+    if (!text) return { reply: "Sorry — I lost my words there. Could you say that again?", usedBody: false, empty: true, askedBody };
     turns.push({ user, system, assistant: { role: 'assistant', content: text } });
     if (turns.length > MAX_TURNS) turns = turns.slice(-MAX_TURNS);
-    return { reply: text, usedBody: !!(ctx && ctx.say && note), model: body.model || MODEL };
+    return { reply: text, usedBody: !!(ctx && ctx.say && note), askedBody, model: r.body.model || MODEL };
   }
 
   function reset() { turns = []; }
@@ -147,4 +188,4 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
   return { reply, reset, status };
 }
 
-module.exports = { createCompanion, mockReply, bodyNote, groqKey, MODEL };
+module.exports = { createCompanion, mockReply, bodyNote, groqKey, MODEL, BODY_TOOL };
