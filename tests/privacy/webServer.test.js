@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
 const { createApp } = require('../../src/webServer');
-const { fakeAdapterFactory, SAMPLE, tempMemory } = require('../helpers');
+const { fakeAdapterFactory, SAMPLE, tempMemory, tempConsentStore } = require('../helpers');
 
 function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -27,13 +27,14 @@ async function boot(t) {
   const port = 30000 + Math.floor(Math.random() * 20000);
   const { factory, calls } = fakeAdapterFactory();
   const mem = tempMemory();
+  const cs = tempConsentStore();
   const replies = [];
-  const app = createApp({ port, adapterFactory: factory, memory: mem.memory, log: () => {},
+  const app = createApp({ port, adapterFactory: factory, memory: mem.memory, consentStore: cs.store, log: () => {},
     reply: async ({ message, ctx }) => { replies.push(ctx); return { reply: 'ok', usedBody: !!ctx.say }; } });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
-  t.after(async () => { await app.close(); mem.cleanup(); });
+  t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); });
   const api = (path, body) => request(port, { method: body ? 'POST' : 'GET', path, body, headers: { 'x-attune-token': app.guard.token } });
-  return { port, app, calls, replies, api, mem };
+  return { port, app, calls, replies, api, mem, cs };
 }
 
 test('API rejects requests without the session token', async (t) => {
@@ -120,12 +121,13 @@ test('insights reach the human UI; the AI only gets a number-free note; chat nev
   const { createMockAdapter } = require('../../src/adapter/mock');
   const port = 30000 + Math.floor(Math.random() * 20000);
   const mem = tempMemory();
+  const cs = tempConsentStore();
   const ctxs = [];
-  const app = createApp({ port, memory: mem.memory, log: () => {},
+  const app = createApp({ port, memory: mem.memory, consentStore: cs.store, log: () => {},
     adapterFactory: () => createMockAdapter({ intervalMs: 15, insightEverySamples: 4, insightNeverArrives: true }),
     reply: async ({ ctx }) => { ctxs.push(ctx); return { reply: 'ok', usedBody: !!ctx.say }; } });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
-  t.after(async () => { await app.close(); mem.cleanup(); });
+  t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); });
   const api = (path, body) => request(port, { method: body ? 'POST' : 'GET', path, body, headers: { 'x-attune-token': app.guard.token } });
 
   await api('/api/consent', { sensing: true, presageAck: true, aiSharing: true });

@@ -29,10 +29,17 @@ function fakeAdapterFactory({ failWith } = {}) {
 
 const SAMPLE = { tMs: 0, pulseBpm: 72, pulseConfidence: 0.9, expression: 'neutral', expressionConfidence: 0.8, talking: false, speechFast: false };
 
+function tempConsentStore() {
+  const { createConsentStore } = require('../src/privacy/consentStore');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-consent-'));
+  const file = path.join(dir, 'consent.json');
+  return { store: createConsentStore(file), file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
 function tempMemory() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-test-'));
   const file = path.join(dir, 'memory.json');
   return { memory: createMemory(file), file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
-module.exports = { fakeAdapterFactory, SAMPLE, tempMemory };
+module.exports = { fakeAdapterFactory, SAMPLE, tempMemory, tempConsentStore };

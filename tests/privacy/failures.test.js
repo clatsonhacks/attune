@@ -1,6 +1,6 @@
 'use strict';
 /* Plan M1-04 / M1-07: process isolation, crash, device loss, permission failure, restart. */
-const { tempMemory } = require('../helpers');
+const { tempMemory, tempConsentStore } = require('../helpers');
 const test = require('node:test');
 const assert = require('node:assert');
 const { createConsent } = require('../../src/privacy/consent');
@@ -97,19 +97,21 @@ test('worker environment excludes unrelated secrets', () => {
   assert.ok(!('SMARTSPECTRA_API_KEY' in buildWorkerEnv('mock', {}, { SMARTSPECTRA_API_KEY: 'k' })));
 });
 
-test('app restart never resumes sensing: consent starts empty', async (t) => {
+test('app restart remembers permission but never turns the camera on by itself', async (t) => {
   const mem = tempMemory();
-  t.after(() => mem.cleanup());
+  const cs = tempConsentStore();
+  t.after(() => { mem.cleanup(); cs.cleanup(); });
   let created = 0;
   const factory = () => { created++; return { name: 'fake', start() {}, async stop() {} }; };
-  const a = createApp({ port: 39001, adapterFactory: factory, memory: mem.memory, log: () => {} });
+  const a = createApp({ port: 39001, adapterFactory: factory, memory: mem.memory, consentStore: cs.store, log: () => {} });
   a.consent.grant({ sensing: true, presageAck: true, aiSharing: true });
   await a.sensing.settled();
   await a.sensing.shutdown();
-  const b = createApp({ port: 39001, adapterFactory: factory, memory: mem.memory, log: () => {} });
+  const b = createApp({ port: 39001, adapterFactory: factory, memory: mem.memory, consentStore: cs.store, log: () => {} });
   t.after(() => b.sensing.shutdown());
-  assert.strictEqual(b.consent.has('sensing'), false);
-  assert.strictEqual(b.consent.has('aiSharing'), false);
-  assert.strictEqual(b.sensing.status().state, 'idle');
-  assert.strictEqual(created, 1);
+  assert.strictEqual(b.consent.has('sensing'), true);   // asked once, remembered
+  assert.strictEqual(b.consent.has('aiSharing'), true);
+  await b.sensing.settled();
+  assert.strictEqual(b.sensing.status().state, 'idle'); // …but the camera waits for a chat or the AI
+  assert.strictEqual(created, 0);                       // granting directly (not via the UI) never started it
 });
