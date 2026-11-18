@@ -14,11 +14,11 @@
  * (default 2 min) without calls, so it never runs just because the host app is open.
  *
  * Tools: get_attune_status · get_body_context · record_correction · memory_get · memory_append · forget_me
- * Uses the mock adapter by default; set ATTUNE_ADAPTER=smartspectra to use the real SDK.
+ * Uses the real SmartSpectra SDK by default; ATTUNE_ADAPTER=mock (or --demo) runs on synthetic vitals.
  */
 const { createSession } = require('./session');
 const { createMemory } = require('./memory');
-const { createAdapter } = require('./adapter');
+const { createAdapter, isDemo } = require('./adapter');
 const { createConsent, parseConsentString } = require('./privacy/consent');
 const { createSensing } = require('./sensing');
 const { createCapabilities } = require('./privacy/capabilities');
@@ -33,7 +33,7 @@ function createConnectorCore({
   log = (m) => process.stderr.write(`[attune-sense] ${m}\n`),
 } = {}) {
   const requested = parseConsentString(consentString);
-  const simulated = (process.env.ATTUNE_ADAPTER || 'mock').toLowerCase() !== 'smartspectra';
+  const simulated = isDemo();
   const consent = createConsent();
   const capabilities = createCapabilities({ consent });
   const bridge = createContextBridge({ capabilities });
