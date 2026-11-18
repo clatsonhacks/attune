@@ -2,18 +2,19 @@
 /*
  * The companion's reply logic.
  *
- * Real mode (default): Claude via the official Anthropic SDK, with conversation history.
- *  - Credentials: ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile, resolved by the SDK).
- *    ATTUNE_ANTHROPIC_KEY is still accepted for older .env files.
- *  - Body context, when the user allowed AI sharing, is appended to that turn as a short mid-conversation
- *    system message. The top-level system prompt never changes, so it stays cacheable.
+ * Real mode (default): Groq's OpenAI-compatible chat completions API, with conversation history.
+ *  - Credentials: GROQ_API_KEY in .env (a stray space before "=" is tolerated).
+ *  - Model: ATTUNE_LLM_MODEL, default openai/gpt-oss-120b (reasoning effort low → fast, short replies).
+ *  - Body context, when the user allowed AI sharing, is appended to that turn as a short system message
+ *    after the user's message; the main system prompt never changes.
  *  - No fake replies: if the AI can't be reached, the caller gets an error code and says so.
  * Demo mode (ATTUNE_ADAPTER=mock / --demo): the scripted mock below, no network.
  */
-const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = process.env.ATTUNE_LLM_MODEL || 'claude-opus-5-5';
-const MAX_TURNS = 20; // keep the last 20 exchanges
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODEL = process.env.ATTUNE_LLM_MODEL || 'openai/gpt-oss-120b';
+const MAX_TURNS = 20;       // keep the last 20 exchanges
+const TIMEOUT_MS = 30000;
 
 const SYSTEM = [
   'You are Attune, a warm and concise companion. Reply in 1–4 short sentences, plain language, no lists.',
@@ -24,6 +25,13 @@ const SYSTEM = [
   'Never mention numbers, never diagnose, never claim to know emotions or detect lies, and never quote the note.',
   'If the user says the read is wrong, accept it without arguing.',
 ].join(' ');
+
+/** GROQ_API_KEY, tolerating "GROQ_API_KEY =" style keys produced by a space before "=" in .env. */
+function groqKey(env = process.env) {
+  const name = Object.keys(env).find((n) => n.trim() === 'GROQ_API_KEY');
+  const v = name ? String(env[name]).trim() : '';
+  return v || null;
+}
 
 /* ---------------- demo (scripted) ---------------- */
 const ACKS = ['I hear you.', 'That makes sense.', 'Thanks for telling me that.', 'Got it.'];
@@ -48,7 +56,7 @@ function mockReply({ message, ctx }) {
   return { reply: `${ack} Tell me more — what's on your mind?`, usedBody: false, note: null };
 }
 
-/* ---------------- real (Claude) ---------------- */
+/* ---------------- real (Groq) ---------------- */
 function bodyNote(ctx) {
   if (!ctx || ['off', 'stale', 'not_authorized', 'consent_required', 'starting'].includes(ctx.state)) return null;
   if (ctx.state === 'unclear' || ctx.state === 'calibrating') return 'Body signal: unclear right now. Say nothing about the body.';
@@ -59,85 +67,79 @@ function bodyNote(ctx) {
 }
 
 const ERRORS = {
-  not_connected: 'The AI is not connected. Add ANTHROPIC_API_KEY to .env and restart Attune.',
-  forbidden: 'The API key does not have access to this model.',
+  not_connected: 'The AI is not connected. Add GROQ_API_KEY to .env and restart Attune.',
+  forbidden: 'The Groq key does not have access to this model.',
   rate_limited: 'The AI is busy (rate limited). Try again in a moment.',
-  offline: "Can't reach the AI service. Check the internet connection.",
+  offline: "Can't reach Groq. Check the internet connection.",
   bad_request: 'The AI request was rejected.',
   unavailable: 'The AI service had a problem. Try again in a moment.',
 };
 
-function classify(e) {
-  if (e instanceof Anthropic.AuthenticationError) return 'not_connected';
-  if (e instanceof Anthropic.PermissionDeniedError) return 'forbidden';
-  if (e instanceof Anthropic.RateLimitError) return 'rate_limited';
-  if (e instanceof Anthropic.BadRequestError) return 'bad_request';
-  if (e instanceof Anthropic.APIConnectionError) return 'offline';
-  if (e instanceof Anthropic.APIError) return 'unavailable';
-  // The SDK throws a plain error before any request when no credentials can be resolved.
-  if (/api[_ ]?key|auth/i.test(String(e && e.message))) return 'not_connected';
+function classifyStatus(status) {
+  if (status === 401) return 'not_connected';
+  if (status === 403 || status === 404) return 'forbidden';
+  if (status === 429) return 'rate_limited';
+  if (status >= 400 && status < 500) return 'bad_request';
   return 'unavailable';
 }
 
-function createCompanion({ demo = false, client, log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
-  let turns = []; // [{ user, system?, assistant }] — assistant is the full response.content (keeps thinking blocks)
+function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = process.env, log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
+  let turns = []; // [{ user, system?, assistant }] — plain chat messages
   let lastError = null;
   let everSucceeded = false;
-  let api = client || null;
-  const hasEnvCredential = () => !!(client || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ATTUNE_ANTHROPIC_KEY);
-
-  function getClient() {
-    if (!api) {
-      const legacy = process.env.ATTUNE_ANTHROPIC_KEY;
-      api = legacy && !process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: legacy }) : new Anthropic();
-    }
-    return api;
-  }
 
   function status() {
     return demo
       ? { mode: 'demo', provider: 'scripted', model: null, connected: true, error: null }
-      : {
-        mode: 'real', provider: 'anthropic', model: MODEL, error: lastError,
-        // Not "connected" until a key is configured or a call has worked; any auth failure clears it.
-        connected: lastError !== 'not_connected' && (everSucceeded || hasEnvCredential()),
-      };
+      : { mode: 'real', provider: 'groq', model: MODEL, error: lastError,
+        connected: lastError !== 'not_connected' && (everSucceeded || !!groqKey(env)) };
   }
 
   async function reply({ message, ctx }) {
     if (demo) return mockReply({ message, ctx });
+    const key = groqKey(env);
+    if (!key) { lastError = 'not_connected'; return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false }; }
 
     const user = { role: 'user', content: String(message) };
     const note = bodyNote(ctx);
     const system = note ? { role: 'system', content: note } : null;
-    const history = turns.flatMap((t) => [t.user, ...(t.system ? [t.system] : []), { role: 'assistant', content: t.assistant }]);
+    const history = turns.flatMap((t) => [t.user, ...(t.system ? [t.system] : []), t.assistant]);
 
-    let res;
+    let res, body;
     try {
-      res = await getClient().beta.messages.create({
-        model: MODEL,
-        max_tokens: 16000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default', // on a policy decline, the API retries on a suitable fallback model
-        output_config: { effort: 'low' }, // short conversational turns
-        system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-        messages: [...history, user, ...(system ? [system] : [])],
+      res = await fetchFn(GROQ_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [{ role: 'system', content: SYSTEM }, ...history, user, ...(system ? [system] : [])],
+          max_completion_tokens: 1024,
+          temperature: 0.7,
+          reasoning_effort: 'low',
+          include_reasoning: false,
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
+      body = await res.json().catch(() => ({}));
     } catch (e) {
-      lastError = classify(e);
-      log(`AI request failed (${lastError})`);
+      lastError = 'offline';
+      log(`AI request failed (offline: ${e.name})`);
+      return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false };
+    }
+    if (!res.ok) {
+      lastError = classifyStatus(res.status);
+      log(`AI request failed (${lastError}, HTTP ${res.status})`);
       return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false };
     }
     lastError = null;
     everSucceeded = true;
 
-    if (res.stop_reason === 'refusal') {
-      return { reply: "I can't help with that one, but I'm still here if you want to talk about something else.", usedBody: false, refused: true };
-    }
-    const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    turns.push({ user, system, assistant: res.content });
+    const choice = body.choices && body.choices[0];
+    const text = choice && choice.message && typeof choice.message.content === 'string' ? choice.message.content.trim() : '';
+    if (!text) return { reply: "Sorry — I lost my words there. Could you say that again?", usedBody: false, empty: true };
+    turns.push({ user, system, assistant: { role: 'assistant', content: text } });
     if (turns.length > MAX_TURNS) turns = turns.slice(-MAX_TURNS);
-    return { reply: text || '…', usedBody: !!(ctx && ctx.say && note), model: res.model };
+    return { reply: text, usedBody: !!(ctx && ctx.say && note), model: body.model || MODEL };
   }
 
   function reset() { turns = []; }
@@ -145,4 +147,4 @@ function createCompanion({ demo = false, client, log = (m) => process.stderr.wri
   return { reply, reset, status };
 }
 
-module.exports = { createCompanion, mockReply, bodyNote, MODEL };
+module.exports = { createCompanion, mockReply, bodyNote, groqKey, MODEL };
