@@ -6,12 +6,14 @@
  *   - expression/blink/talking: live every frame — supports pulse
  *   - breathing: needs ~30s of stillness + silence; PAUSES while talking
  *   - hrv: needs a full 60s low-motion window; gathers in the background
- * Breathing/HRV values here are derived (mock); with the real SDK they come from decodeMetrics.
+ * Breathing/HRV values are DERIVED from pulse, not measured. They are shown only in mock mode and are
+ * labelled simulated; with the real SDK (simulated:false) they report "unavailable" until real SDK
+ * breathing/HRV metrics are wired in.
  */
 const SAMPLE_MS = 1000; // each mock sample ≈ 1s of logical data
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-function createSignals() {
+function createSignals({ simulated = true } = {}) {
   let baseline = null;
   const bSamples = [];
   let pulse = null, pulseConf = 0, expr = 'unknown', exprConf = 0;
@@ -39,18 +41,25 @@ function createSignals() {
   }
 
   function snapshot() {
-    return [
+    const list = [
       { id: 'pulse', label: 'Pulse', value: pulse ? `${Math.round(pulse)} bpm` : '—', status: pulse ? 'active' : 'idle', confidence: pulseConf,
         detail: '12-second rolling average (valid 40–110 BPM). The primary live signal — it drives the real-time read.' },
       { id: 'face', label: 'Expression', value: expr === 'unknown' ? '—' : expr, status: exprConf >= 0.4 ? 'active' : 'idle', confidence: exprConf,
         detail: 'Facial expression + blink + talking detection, live every frame. Supports and cross-checks the pulse read.' },
       { id: 'breathing', label: 'Breathing', value: breathPaused ? 'paused' : breathVal ? `${breathVal}/min` : `${Math.floor(breathAcc / 1000)}/30s`,
         status: breathPaused ? 'paused' : breathVal ? 'ready' : 'gathering', confidence: breathVal ? 0.8 : breathAcc / 30000,
-        detail: 'Needs ~30s of stillness and silence. Runs in parallel and pauses while you talk — talking invalidates it, so it never guesses.' },
+        detail: 'Simulated in demo mode (derived from pulse, not measured). Needs ~30s of stillness and silence and pauses while you talk.' },
       { id: 'hrv', label: 'HRV', value: hrvVal ? `${hrvVal} ms` : `${Math.floor(hrvAcc / 1000)}/60s`,
         status: hrvVal ? 'ready' : 'gathering', confidence: hrvVal ? 0.8 : hrvAcc / 60000,
-        detail: 'Heart-rate variability needs a full 60-second window. Gathers quietly in the background and reports once ready.' },
+        detail: 'Simulated in demo mode (derived from pulse, not measured). Heart-rate variability needs a full 60-second window.' },
     ];
+    if (!simulated) {
+      for (const sig of list.slice(2)) {
+        Object.assign(sig, { value: 'unavailable', status: 'idle', confidence: 0,
+          detail: 'Not measured yet — real SDK breathing/HRV metrics are not wired in, so nothing is shown rather than a guess.' });
+      }
+    }
+    return list;
   }
 
   return { ingest, snapshot };
