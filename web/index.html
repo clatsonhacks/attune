@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Attune</title>
+  <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -99,6 +100,8 @@
               </div>
             </div>
             <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Grant consent to sense</span></button>
+            <p class="fineprint warn" id="sensorError" hidden></p>
+            <p class="fineprint" id="aiNote" hidden>Sensing is on, but sharing with the AI is off — replies won't use your body signal.</p>
             <p class="fineprint">Only interpreted signals — never raw video or vitals — are shared, and only after you consent.</p>
           </section>
 
@@ -109,7 +112,7 @@
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
             </form>
-            <p class="hint">Wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
+            <p class="hint" id="hint" hidden>Demo mode (simulated vitals): wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
           </section>
         </div>
       </section>
@@ -140,6 +143,23 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Consent: nothing is measured until the person starts it here -->
+  <div class="dlg-back" id="consentDlg" hidden>
+    <div class="dlg glass" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
+      <h2 id="consentTitle">Before Attune turns on your camera</h2>
+      <p class="dlg-sub">Attune uses your camera and Presage SmartSpectra to estimate physiological signals. It is not a medical or emotion-detection tool, and readings can be wrong.</p>
+      <label class="opt"><input type="checkbox" id="cSensing" /><span><b>Camera sensing</b><small>Video is processed on this device by the SmartSpectra SDK. Attune does not send video or raw measurements to its own servers. You can pause any time.</small></span></label>
+      <label class="opt"><input type="checkbox" id="cPresage" /><span><b>I understand Presage processing</b><small>The Presage SDK contacts Presage services for sign-in and automatic Insights, which can include physiological measurements. See <a href="https://api.physiology.presagetech.com/privacypolicy" target="_blank" rel="noopener">Presage's privacy policy</a>. Required to start.</small></span></label>
+      <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
+      <label class="opt"><input type="checkbox" id="cMemory" /><span><b>Remember on this device <em>(optional)</em></b><small>Stores interpretations and corrections locally so later sessions can continue. You can delete any day or everything.</small></span></label>
+      <p class="fineprint warn" id="consentErr" hidden></p>
+      <div class="dlg-actions">
+        <button class="mini" id="consentCancel">Not now</button>
+        <button class="cta" id="consentStart" disabled><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-consent"/></svg>Start sensing</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

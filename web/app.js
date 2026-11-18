@@ -1,8 +1,13 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
+// Per-boot session token injected by the server into index.html; required on every /api call.
+const TOKEN = (document.querySelector('meta[name="attune-token"]') || {}).content || '';
 const api = (p, body) =>
-  fetch(p, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})
-    .then((r) => r.json());
+  fetch(p, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'x-attune-token': TOKEN, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then((r) => r.json());
 
 /* ---------- Icons (assets/icons.svg sprite) ---------- */
 const icon = (id, cls = '') => `<svg class="ic ${cls}" aria-hidden="true"><use href="assets/icons.svg#i-${id}"/></svg>`;
@@ -13,7 +18,7 @@ const icon = (id, cls = '') => `<svg class="ic ${cls}" aria-hidden="true"><use h
 const MOOD_HOLD_MS = 1500;
 let mood = 'calm', pendingMood = null, pendingSince = 0;
 function moodFor(s) {
-  if (!s.consent) return 'calm';
+  if (!s.sensing || s.sensing.state !== 'active') return 'calm';
   if (s.state === 'elevated') return 'tense';
   const face = (s.signals || []).find((x) => x.id === 'face');
   const expr = face && face.status === 'active' ? face.value : null;
@@ -47,6 +52,7 @@ document.querySelectorAll('.navitem').forEach((n) => (n.onclick = () => switchVi
 /* ---------- Private mode ---------- */
 $('incognito').onchange = async (e) => {
   const r = await api('/api/incognito', { on: e.target.checked });
+  e.target.checked = r.private;
   const np = $('privNote'); if (np) np.hidden = !r.private;
 };
 
@@ -79,7 +85,7 @@ function showDay(k) {
   const d = calData[k];
   if (!d) { $('dayDetail').innerHTML = '<div class="dd-empty">No memory for this day.</div>'; return; }
   const moments = d.moments.map((m) => `<div class="dd-moment">${m}</div>`).join('') || '<div class="dd-empty">No notable moments.</div>';
-  $('dayDetail').innerHTML = `<h3>${k}</h3>${moments}<div style="margin-top:12px"><button class="mini danger" id="forgetDay">${icon('trash', 'sm')}delete this day</button></div>`;
+  $('dayDetail').innerHTML = `<h3>${k}</h3>${moments}<div class="dd-actions"><button class="mini danger" id="forgetDay">${icon('trash', 'sm')}delete this day</button></div>`;
   $('forgetDay').onclick = async () => { await api('/api/memory/forgetDay', { date: k }); selDay = null; await loadCalendar(); $('dayDetail').innerHTML = '<div class="dd-empty">Deleted.</div>'; };
 }
 $('calGrid').addEventListener('click', (e) => { const c = e.target.closest('.cal-cell.has'); if (!c) return; selDay = c.dataset.key; renderCalendar(); showDay(selDay); });
@@ -144,7 +150,7 @@ $('signals').addEventListener('click', (e) => {
 
 /* ---------- Companion ---------- */
 let consent = false, lastState = null;
-const LABEL = { consent_required: 'consent needed', starting: 'connecting', neutral: 'with you', elevated: 'elevated', unclear: 'signal unclear', calibrating: 'tuning in' };
+const LABEL = { consent_required: 'consent needed', starting: 'starting camera', error: 'sensor error', off: 'paused', neutral: 'with you', elevated: 'elevated', unclear: 'signal unclear', calibrating: 'tuning in' };
 function addMsg(text, who, opts = {}) {
   const el = document.createElement('div');
   el.className = `m ${who}`; el.textContent = text;
@@ -159,16 +165,23 @@ function addMsg(text, who, opts = {}) {
 async function poll() {
   try {
     const s = await api('/api/state');
-    consent = s.consent;
+    const c = s.consent || {};
+    consent = !!c.sensing;
     const st = s.state || 'starting';
+    $('incognito').checked = !c.memory;
+    $('aiNote').hidden = !consent || !!c.aiSharing;
+    $('hint').hidden = !(s.sensing && s.sensing.simulated);
+    $('sensorError').hidden = !(s.sensing && s.sensing.error);
+    if (s.sensing && s.sensing.error) $('sensorError').textContent = `Sensor could not start: ${s.sensing.error}`;
     $('state').textContent = LABEL[st] || st;
     $('mascot').dataset.state = st;
     $('pulse').textContent = s.pulseBpm == null ? '—' : s.pulseBpm;
-    $('confLabel').textContent = !consent ? 'tap to begin' : st === 'calibrating' ? 'calibrating…' : st === 'unclear' ? 'signal low' : 'signal ' + Math.round((s.confidence || 0) * 100) + '%';
+    $('confLabel').textContent = !consent ? 'tap to begin' : st === 'starting' ? 'starting…' : st === 'calibrating' ? 'calibrating…' : st === 'unclear' ? 'signal low' : 'signal ' + Math.round((s.confidence || 0) * 100) + '%';
     renderSignals(s.signals);
     proposeMood(moodFor(s));
     $('consentLabel').textContent = consent ? 'Sensing on — tap to pause' : 'Grant consent to sense';
-    $('consentIcon').setAttribute('href', `assets/icons.svg#i-${consent ? 'pause' : 'consent'}`);
+    const iconHref = `assets/icons.svg#i-${consent ? 'pause' : 'consent'}`;
+    if ($('consentIcon').getAttribute('href') !== iconHref) $('consentIcon').setAttribute('href', iconHref);
     $('consentBtn').classList.toggle('on', consent);
     const show = consent && s.say && s.directive;
     $('nudgeBox').hidden = !show;
@@ -177,7 +190,30 @@ async function poll() {
     lastState = s;
   } catch {}
 }
-$('consentBtn').onclick = async () => { const r = await api('/api/consent', { allow: !consent }); consent = r.consent; poll(); };
+/* ---------- Consent dialog (the only way sensing can start) ---------- */
+function openConsent() {
+  $('cSensing').checked = false; $('cPresage').checked = false;
+  $('cAi').checked = false; $('cMemory').checked = false;
+  $('consentErr').hidden = true;
+  syncConsentForm();
+  $('consentDlg').hidden = false;
+  $('cSensing').focus();
+}
+function syncConsentForm() { $('consentStart').disabled = !($('cSensing').checked && $('cPresage').checked); }
+['cSensing', 'cPresage'].forEach((id) => ($(id).onchange = syncConsentForm));
+$('consentCancel').onclick = () => { $('consentDlg').hidden = true; };
+$('consentStart').onclick = async () => {
+  const r = await api('/api/consent', { sensing: true, presageAck: true, aiSharing: $('cAi').checked, memory: $('cMemory').checked });
+  if (r.error) { $('consentErr').textContent = r.error; $('consentErr').hidden = false; return; }
+  $('consentDlg').hidden = true;
+  poll();
+};
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('consentDlg').hidden) $('consentDlg').hidden = true; });
+$('consentBtn').onclick = async () => {
+  if (!consent) return openConsent();
+  await api('/api/revoke', { scopes: ['sensing'] });
+  poll();
+};
 $('chatForm').onsubmit = async (e) => {
   e.preventDefault();
   const text = $('msg').value.trim(); if (!text) return;
@@ -190,4 +226,4 @@ $('chatForm').onsubmit = async (e) => {
 /* ---------- boot ---------- */
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
-addMsg("Hi — I'm here with you. Grant consent and I'll pay attention to how you're doing, not just what you say.", 'bot');
+addMsg("Hi — I'm here with you. If you turn on sensing (and choose to share it with me), I'll pay attention to how you're doing, not just what you say.", 'bot');
