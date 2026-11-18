@@ -3,6 +3,9 @@
  * Attune — local backend + web UI. Real by default (SmartSpectra SDK + Groq); demo only with --demo.
  *
  * Privacy boundary (see docs/DATA_FLOW.md):
+ *  - Consent is asked once and remembered (src/privacy/consentStore.js). It grants PERMISSION only: the camera
+ *    starts when a chat starts, when the AI asks (check_in_with_body tool) or when the person turns it on, and
+ *    stops after ATTUNE_SENSE_IDLE_MS (default 5 min) without chat activity, on pause, or on revoke.
  *  - The sensor (the real SmartSpectra SDK, or synthetic vitals in demo mode) does NOT start at
  *    boot. It starts only after the human grants the `sensing` scope (with the Presage disclosure
  *    acknowledged) in the UI, and stops on revoke.
@@ -23,6 +26,7 @@ const { connectorsStatus } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
 const { createSensing } = require('./sensing');
+const { createConsentStore } = require('./privacy/consentStore');
 const { createCapabilities } = require('./privacy/capabilities');
 const { createContextBridge } = require('./contextBridge');
 const { normalizeInsight } = require('./insights/normalizer');
@@ -45,6 +49,8 @@ function createApp({
   memory = createMemory(path.join(process.cwd(), demo ? '.attune-demo-memory.json' : '.attune-memory.json')),
   companion = null,
   reply = null, // test hook: replace the companion's reply function
+  consentStore = createConsentStore(path.join(process.cwd(), demo ? '.attune-demo-consent.json' : '.attune-consent.json')),
+  idleMs = Number(process.env.ATTUNE_SENSE_IDLE_MS) || 5 * 60 * 1000,
   log = (m) => process.stderr.write(`[attune] ${m}\n`),
 } = {}) {
   companion = companion || createCompanion({ demo, log });
@@ -55,6 +61,7 @@ function createApp({
   const bridge = createContextBridge({ capabilities });
   consent.onChange(() => bridge.onConsentChange());
   let companionCap = null;
+  let chatStarted = false; // the first message of a conversation turns the camera on
   const simulated = demo;
   const adapterName = demo ? 'mock' : 'smartspectra';
 
@@ -82,9 +89,55 @@ function createApp({
     },
     onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
     onStop: () => { lastSample = null; bridge.closeSession(); },
+    autoStart: false, // permission ≠ camera on; see the sensing policy below
   });
 
+  /* ---- Sensing policy: when the camera runs ---- */
+  let paused = false;        // the person paused the camera; stays paused until they resume
+  let lastTrigger = null;    // why the camera last turned on
+  let idleTimer = null;
+  let idleAt = null;
+  const remembered = consentStore.load();
+  if (remembered) {
+    paused = remembered.paused;
+    try { consent.grant(remembered.scopes); log('restored saved consent (camera stays off until a chat starts)'); } catch {}
+  }
+  function persist() {
+    const c = consent.snapshot();
+    if (c.sensing || c.aiSharing || c.memory) consentStore.save({ scopes: c, paused, grantedAt: remembered && remembered.grantedAt });
+    else consentStore.clear();
+  }
+  function touchIdle() {
+    clearTimeout(idleTimer);
+    idleAt = Date.now() + idleMs;
+    idleTimer = setTimeout(() => { idleAt = null; sensing.release('idle'); }, idleMs);
+    if (idleTimer.unref) idleTimer.unref();
+  }
+  /** Turn the camera on for `reason` if the person allowed it and has not paused it. Never waits for frames. */
+  async function wake(reason) {
+    if (!consent.has('sensing') || paused) return sensing.status();
+    touchIdle();
+    if (sensingActive()) return sensing.status();
+    lastTrigger = reason;
+    return sensing.request(reason);
+  }
+  /** Answer to the AI's check_in_with_body tool: immediate, from cache. */
+  async function bodyRequest(reason) {
+    if (!consent.has('aiSharing')) return { status: 'not_shared', note: 'The person has not allowed sharing body signals with you. Do not mention the body.' };
+    if (!consent.has('sensing')) return { status: 'not_permitted', note: 'Camera sensing is not allowed. Do not mention the body.' };
+    if (paused) return { status: 'paused', note: 'The person paused the camera. Do not mention the body.' };
+    const wasActive = sensingActive();
+    await wake('ai_requested');
+    log(`AI asked for a body reading${reason ? ` (${reason.slice(0, 80)})` : ''}`);
+    if (!wasActive || !sensingActive()) return { status: 'camera_starting', note: 'A reading will be available in about 20–30 seconds. Carry on; do not mention the body yet.' };
+    if (!capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
+    const ctx = bridge.getApprovedContext(companionCap);
+    if (['off', 'stale', 'starting', 'calibrating'].includes(ctx.state)) return { status: 'warming_up', note: 'Still calibrating. Do not mention the body yet.' };
+    return { status: 'ok', ...ctx };
+  }
+
   consent.onChange((next) => memory.setMuted(!next.memory));
+  consent.onChange(() => persist());
 
   const sensingActive = () => sensing.status().state === 'active';
 
@@ -127,8 +180,15 @@ function createApp({
   function statePayload() {
     const c = consent.snapshot();
     const s = sensing.status();
-    const base = { mode: demo ? 'demo' : 'real', ai: companion.status(), consent: c, sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated } };
-    if (!sensingActive()) return { ...base, ...NO_CONTEXT, state: s.state === 'error' ? 'error' : c.sensing ? 'starting' : 'consent_required', pulseBpm: null, signals: [], evidence: [] };
+    const base = {
+      mode: demo ? 'demo' : 'real', ai: companion.status(), consent: { ...c, remembered: !!consentStore.load() },
+      sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated, camera: s.camera,
+        paused, lastTrigger, idleInMs: idleAt ? Math.max(0, idleAt - Date.now()) : null },
+    };
+    if (!sensingActive()) {
+      const st = s.state === 'error' ? 'error' : !c.sensing ? 'consent_required' : paused ? 'paused' : s.state === 'starting' ? 'starting' : 'standby';
+      return { ...base, ...NO_CONTEXT, state: st, pulseBpm: null, signals: [], evidence: [] };
+    }
     const ctx = session.getBodyContext();
     // Measurements are shown to the consenting human only; the AI path uses getApprovedContext().
     return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), insight: bridge.getHumanView().insight };
@@ -153,27 +213,40 @@ function createApp({
       } catch (e) {
         return sendJSON(res, 400, { error: e.message, code: e.code });
       }
+      if (body.sensing) { paused = false; persist(); await wake('consent_granted'); }
+      await sensing.settled();
+      return sendJSON(res, 200, statePayload());
+    }
+    if (method === 'POST' && url === '/api/sensing') {
+      const { action } = await readBody(req);
+      if (action === 'pause') { paused = true; clearTimeout(idleTimer); idleAt = null; persist(); await sensing.release('paused'); }
+      else if (action === 'resume' || action === 'start') { paused = false; persist(); await wake('turned_on'); }
+      else return sendJSON(res, 400, { error: 'action must be pause, resume or start' });
       await sensing.settled();
       return sendJSON(res, 200, statePayload());
     }
     if (method === 'POST' && url === '/api/revoke') {
       const { scopes } = await readBody(req);
       consent.revoke(Array.isArray(scopes) ? scopes : undefined);
+      if (!consent.has('sensing')) { paused = false; clearTimeout(idleTimer); idleAt = null; }
       await sensing.settled();
       return sendJSON(res, 200, statePayload());
     }
 
     if (method === 'POST' && url === '/api/chat') {
       const { message } = await readBody(req);
+      if (!chatStarted) { chatStarted = true; wake('chat_started'); } // fire-and-forget: never delay the reply
+      else if (sensingActive()) touchIdle();
       // Immediate cache read from the Context Bridge — never waits on the SDK or an Insight.
       if (consent.has('aiSharing') && !capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
       const share = consent.has('aiSharing') && sensingActive();
       const ctx = share ? bridge.getApprovedContext(companionCap) : NO_CONTEXT;
-      const out = await replyFn({ message: String(message || '').slice(0, 4000), ctx });
+      const out = await replyFn({ message: String(message || '').slice(0, 4000), ctx, onBodyRequest: consent.has('aiSharing') ? bodyRequest : undefined });
       return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share, ai: companion.status() });
     }
     if (method === 'POST' && url === '/api/chat/reset') {
       companion.reset();
+      chatStarted = false;
       return sendJSON(res, 200, { ok: true });
     }
     if (method === 'POST' && url === '/api/insight') {
@@ -218,6 +291,7 @@ function createApp({
   });
 
   async function close() {
+    clearTimeout(idleTimer);
     await sensing.shutdown();
     await new Promise((r) => server.close(() => r()));
   }
