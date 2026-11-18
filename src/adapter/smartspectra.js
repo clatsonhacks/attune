@@ -103,6 +103,23 @@ const LOW_CONFIDENCE = () => ({
   expression: 'unknown', expressionConfidence: 0, talking: false, speechFast: false,
 });
 
+const CHEST_NOT_VISIBLE = 7;          // ValidationCode.kChestNotVisible
+const CHEST_FALLBACK_MS = 20000;
+const PROCESSING = { 0: 'uninitialized', 1: 'idle', 2: 'starting', 3: 'running', 4: 'stopping', 5: 'error' };
+
+/**
+ * full: breathing + cardio (what Presage Insights need; needs face AND chest in view) + face signals.
+ * face: pulse + face signals only — works with just a face in view, no breathing/HRV/Insights.
+ */
+function createSdk({ SmartSpectraSDK, MetricType, breathingMetrics, cardioMetrics }, mode, apiKey) {
+  const face = [MetricType.EXPRESSIONS, MetricType.TALKING, MetricType.BLINKING];
+  return new SmartSpectraSDK({
+    apiKey,
+    enableTelemetry: false, // SDK telemetry only; does NOT stop Insights/auth traffic to Presage
+    requestedMetrics: mode === 'full' ? [...breathingMetrics, ...cardioMetrics, ...face] : [MetricType.PULSE_RATE, ...face],
+  });
+}
+
 // SmartSpectraErrorCode values that mean the camera/device went away rather than a transient hiccup.
 const DEVICE_LOST = /camera|device|input|unavailable|disconnect/i;
 
@@ -115,7 +132,7 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
     name: 'smartspectra',
     extractMetrics, // exported for unit-testing the mapping against real decodeMetrics output
 
-    start(onSample, { onInsight = () => {}, onError = () => {} } = {}) {
+    start(onSample, { onInsight = () => {}, onError = () => {}, onStatus = () => {} } = {}) {
       if (!apiKey) throw new Error('SMARTSPECTRA_API_KEY is required for the smartspectra adapter.');
       let lib;
       try {
@@ -123,22 +140,43 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
       } catch (e) {
         throw new Error(`could not load @smartspectra/node-sdk (${e.message}). Run \`npm install\`.`);
       }
-      const { SmartSpectraSDK, CameraSelection, MetricType, decodeMetrics, breathingMetrics, cardioMetrics } = lib;
+      const { CameraSelection, decodeMetrics } = lib;
       const map = createMapper();
+      const startedAt = Date.now();
+      let everOk = false;
+      let mode = process.env.ATTUNE_METRICS === 'face' ? 'face' : 'full';
 
-      sdk = new SmartSpectraSDK({
-        apiKey,
-        enableTelemetry: false, // SDK telemetry only; does NOT stop Insights/auth traffic to Presage
-        requestedMetrics: [...breathingMetrics, ...cardioMetrics, MetricType.EXPRESSIONS, MetricType.TALKING, MetricType.BLINKING],
-      });
-      sdk.on('metrics', (buf) => {
+      const launch = () => {
+        sdk = createSdk(lib, mode, apiKey);
+        wire(sdk);
+        sdk.useCamera(CameraSelection.default);
+        sdk.start();
+        log(`SmartSpectra capture started on the default camera (${mode === 'full' ? 'face + chest' : 'face only'})`);
+        onStatus({ mode });
+      };
+
+      // Breathing (and so Presage Insights) needs the chest in view. At a laptop that often isn't possible:
+      // if the only thing blocking measurement for 20 s is "chest not visible", restart with face-only metrics.
+      const maybeFallBack = async (code) => {
+        if (mode !== 'full' || everOk || code !== CHEST_NOT_VISIBLE || Date.now() - startedAt < CHEST_FALLBACK_MS || !sdk) return;
+        mode = 'face';
+        const old = sdk;
+        sdk = null;
+        log('chest not visible for 20 s — continuing with face-only metrics (no breathing / Presage check-ins)');
+        try { await old.stopAsync(); } catch {}
+        try { await old.destroy(); } catch {}
+        launch();
+      };
+
+      function wire(s) {
+      s.on('metrics', (buf) => {
         try {
           onSample(map(decodeMetrics(buf), Date.now()));
         } catch (err) {
           onSample(LOW_CONFIDENCE()); // decode failure → interpreter goes "unclear"
         }
       });
-      sdk.on('insight', (buf, requestId) => {
+      s.on('insight', (buf, requestId) => {
         try {
           const insight = decodeInsight(buf);
           const id = typeof requestId === 'number' ? requestId : insight.requestId;
@@ -150,22 +188,29 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
       });
       // A non-zero validation code (e.g. "No face found") means no metrics will arrive, so feed the
       // interpreter low-confidence samples → state "unclear". Log only when the status changes.
-      let lastValidation = 0;
-      sdk.on('validationStatus', (code, _ts, hint) => {
-        if (code !== lastValidation) log(code ? `validation ${code}: ${hint}` : 'validation ok: face found');
+      // The hint ("Move up…") is passed to the UI so the person can fix their position.
+      let lastValidation = -1;
+      s.on('validationStatus', (code, _ts, hint) => {
+        if (code !== lastValidation) {
+          log(code ? `validation ${code}: ${hint}` : 'validation ok: face found');
+          onStatus({ validationCode: code, hint: code ? String(hint || '') : '' });
+        }
         lastValidation = code;
-        if (code) onSample(LOW_CONFIDENCE());
+        if (!code) everOk = true;
+        if (code) { onSample(LOW_CONFIDENCE()); maybeFallBack(code); }
       });
-      sdk.on('processingStatus', (status) => log(`processing status ${status}`));
-      sdk.on('error', (code, message, retryable) => {
+      s.on('processingStatus', (status) => {
+        log(`processing status ${status}`);
+        onStatus({ processing: PROCESSING[status] || String(status) });
+      });
+      s.on('error', (code, message, retryable) => {
         log(`SmartSpectra error ${code}: ${message}${retryable ? ' (retryable)' : ''}`);
         onSample(LOW_CONFIDENCE());
         if (!retryable) onError({ code: DEVICE_LOST.test(String(message)) ? 'device_unavailable' : 'sdk_error', message: String(message) });
       });
+      }
 
-      sdk.useCamera(CameraSelection.default);
-      sdk.start();
-      log('SmartSpectra capture started on the default camera');
+      launch();
     },
 
     /** User-initiated on-demand Insight. Returns the request id, or null if rate-limited/not running. */

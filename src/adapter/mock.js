@@ -40,8 +40,9 @@ function createMockAdapter({
   return {
     name: 'mock',
     /** start(onSample, { onInsight, onError }): calls onSample(sample) on a cadence until stop(). */
-    start(onSample, { onInsight = () => {}, onError = () => {} } = {}) {
+    start(onSample, { onInsight = () => {}, onError = () => {}, onStatus = () => {} } = {}) {
       callbacks = { onInsight, onError };
+      onStatus({ processing: 'running', validationCode: 0, hint: '' });
       let it = mockStream();
       let n = 0, autoIdx = 0;
       timer = setInterval(() => {

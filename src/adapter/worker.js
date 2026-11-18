@@ -4,6 +4,7 @@
  *
  * IPC protocol (parent → worker):  {type:'start'} · {type:'requestInsight', ref, text} · {type:'stop'}
  *              (worker → parent):  {type:'sample', sample} · {type:'insight', insight} · {type:'error', error}
+ *                                  {type:'status', status}  (camera positioning hint / processing state)
  *                                  {type:'insightRequested', ref, id} · {type:'started'} · {type:'stopped'}
  * Nothing else is accepted. If the parent goes away, the worker stops the sensor and exits.
  */
@@ -39,6 +40,7 @@ process.on('message', async (m) => {
         (sample) => send({ type: 'sample', sample }),
         {
           onInsight: (insight) => send({ type: 'insight', insight }),
+          onStatus: (status) => send({ type: 'status', status }),
           onError: (error) => send({ type: 'error', error: { code: String(error.code || 'sdk_error'), message: String(error.message || '') } }),
         },
       );

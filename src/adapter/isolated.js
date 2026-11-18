@@ -13,7 +13,7 @@ const { fork } = require('child_process');
 const path = require('path');
 
 const ENV_ALLOW = ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'windir', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE',
-  'APPDATA', 'LOCALAPPDATA', 'LANG', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'SMARTSPECTRA_CAPI_PATH'];
+  'APPDATA', 'LOCALAPPDATA', 'LANG', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'SMARTSPECTRA_CAPI_PATH', 'ATTUNE_METRICS'];
 const EXPRESSIONS = new Set(['neutral', 'tense', 'sad', 'smile', 'surprise', 'fear', 'anger', 'unknown']);
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -58,6 +58,17 @@ function buildWorkerEnv(kind, extra = {}, source = process.env) {
   return Object.assign(env, extra);
 }
 
+const PROCESSING = new Set(['uninitialized', 'idle', 'starting', 'running', 'stopping', 'error']);
+function sanitizeStatus(st) {
+  if (!st || typeof st !== 'object') return null;
+  const out = {};
+  if (Number.isInteger(st.validationCode) && st.validationCode >= 0 && st.validationCode < 100) out.validationCode = st.validationCode;
+  if (typeof st.hint === 'string') out.hint = st.hint.slice(0, 120);
+  if (PROCESSING.has(st.processing)) out.processing = st.processing;
+  if (st.mode === 'full' || st.mode === 'face') out.mode = st.mode;
+  return Object.keys(out).length ? out : null;
+}
+
 function createIsolatedAdapter({ kind = 'smartspectra', env = {}, log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
   let child = null;
   let stopping = false;
@@ -67,7 +78,7 @@ function createIsolatedAdapter({ kind = 'smartspectra', env = {}, log = (m) => p
   return {
     name: `${kind} (isolated)`,
 
-    start(onSample, { onInsight = () => {}, onError = () => {} } = {}) {
+    start(onSample, { onInsight = () => {}, onError = () => {}, onStatus = () => {} } = {}) {
       const childEnv = buildWorkerEnv(kind, env);
 
       stopping = false;
@@ -79,6 +90,7 @@ function createIsolatedAdapter({ kind = 'smartspectra', env = {}, log = (m) => p
         if (!m || me !== child) return;
         if (m.type === 'sample') { const s = sanitizeSample(m.sample); if (s) onSample(s); }
         else if (m.type === 'insight') { const i = sanitizeInsight(m.insight); if (i) onInsight(i); }
+        else if (m.type === 'status') { const st = sanitizeStatus(m.status); if (st) onStatus(st); }
         else if (m.type === 'error') onError({ code: String(m.error && m.error.code || 'sdk_error').slice(0, 40), message: String(m.error && m.error.message || '').slice(0, 300) });
         else if (m.type === 'insightRequested' && waiting.has(m.ref)) { waiting.get(m.ref)(Number.isInteger(m.id) ? m.id : null); waiting.delete(m.ref); }
       });
@@ -120,4 +132,4 @@ function createIsolatedAdapter({ kind = 'smartspectra', env = {}, log = (m) => p
   };
 }
 
-module.exports = { createIsolatedAdapter, buildWorkerEnv, sanitizeSample, sanitizeInsight };
+module.exports = { createIsolatedAdapter, buildWorkerEnv, sanitizeSample, sanitizeInsight, sanitizeStatus };
