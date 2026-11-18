@@ -5,38 +5,46 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const Anthropic = require('@anthropic-ai/sdk');
-const { createCompanion, bodyNote } = require('../../src/companion');
+const { createCompanion, bodyNote, groqKey } = require('../../src/companion');
 const { claudeDesktopStatus, SERVER_JS } = require('../../src/connectors');
 
-function fakeClient(responder) {
+const ENV = { GROQ_API_KEY: 'test-key' };
+function fakeFetch(responder) {
   const calls = [];
-  return { calls, beta: { messages: { create: async (req) => { calls.push(JSON.parse(JSON.stringify(req))); return responder(req, calls.length); } } } };
+  const fn = async (url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push({ url, headers: init.headers, body });
+    const { status = 200, json } = await responder(body, calls.length);
+    return { ok: status >= 200 && status < 300, status, json: async () => json };
+  };
+  fn.calls = calls;
+  return fn;
 }
-const textReply = (t) => ({ model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: 'sig' }, { type: 'text', text: t }] });
+const textReply = (t) => ({ json: { model: 'openai/gpt-oss-120b', choices: [{ message: { role: 'assistant', content: t }, finish_reason: 'stop' }] } });
 const TENSE = { state: 'elevated', say: true, directive: 'slow down and check in', confidence: 0.8 };
 
-test('real companion keeps history and replays full assistant content (incl. thinking blocks)', async () => {
-  const client = fakeClient((req, n) => textReply(`reply ${n}`));
-  const c = createCompanion({ client, log: () => {} });
+test('Groq companion: correct endpoint, model and auth; keeps history', async () => {
+  const f = fakeFetch((b, n) => textReply(`reply ${n}`));
+  const c = createCompanion({ fetchFn: f, env: ENV, log: () => {} });
   assert.strictEqual((await c.reply({ message: 'hi', ctx: null })).reply, 'reply 1');
   await c.reply({ message: 'second', ctx: null });
-  const msgs = client.calls[1].messages;
-  assert.deepStrictEqual(msgs.map((m) => m.role), ['user', 'assistant', 'user']);
-  assert.strictEqual(msgs[1].content[0].type, 'thinking');
-  assert.strictEqual(client.calls[1].model, 'claude-opus-5-5');
-  assert.strictEqual(client.calls[1].fallbacks, 'default');
+  const call = f.calls[1];
+  assert.strictEqual(call.url, 'https://api.groq.com/openai/v1/chat/completions');
+  assert.strictEqual(call.headers.authorization, 'Bearer test-key');
+  assert.strictEqual(call.body.model, 'openai/gpt-oss-120b');
+  assert.deepStrictEqual(call.body.messages.map((m) => m.role), ['system', 'user', 'assistant', 'user']);
+  assert.strictEqual(call.body.messages[2].content, 'reply 1');
 });
 
-test('body context goes in a per-turn system note only when shared; the system prompt never changes', async () => {
-  const client = fakeClient(() => textReply('ok'));
-  const c = createCompanion({ client, log: () => {} });
+test('body context goes in a per-turn system note only when shared; the main prompt never changes', async () => {
+  const f = fakeFetch(() => textReply('ok'));
+  const c = createCompanion({ fetchFn: f, env: ENV, log: () => {} });
   await c.reply({ message: 'a', ctx: null });
   await c.reply({ message: "I'm fine", ctx: TENSE });
-  const [first, second] = client.calls;
-  assert.deepStrictEqual(first.system, second.system);
-  assert.strictEqual(first.messages.length, 1);
-  const last = second.messages[second.messages.length - 1];
+  const [first, second] = f.calls.map((x) => x.body.messages);
+  assert.deepStrictEqual(first[0], second[0]);
+  assert.strictEqual(first.length, 2);
+  const last = second[second.length - 1];
   assert.strictEqual(last.role, 'system');
   assert.match(last.content, /elevated/);
   assert.ok(!/\d/.test(last.content));
@@ -44,28 +52,31 @@ test('body context goes in a per-turn system note only when shared; the system p
   assert.match(bodyNote({ state: 'unclear' }), /Say nothing/);
 });
 
-test('refusals are answered gracefully and not stored as history', async () => {
-  const client = fakeClient((req, n) => (n === 1 ? { stop_reason: 'refusal', content: [] } : textReply('fine')));
-  const c = createCompanion({ client, log: () => {} });
-  const r = await c.reply({ message: 'x', ctx: null });
-  assert.strictEqual(r.refused, true);
-  await c.reply({ message: 'y', ctx: null });
-  assert.strictEqual(client.calls[1].messages.length, 1);
+test('errors are reported, never replaced by fake replies', async () => {
+  const cases = [[401, 'not_connected'], [429, 'rate_limited'], [400, 'bad_request'], [503, 'unavailable']];
+  for (const [status, code] of cases) {
+    const c = createCompanion({ fetchFn: fakeFetch(() => ({ status, json: { error: { message: 'x' } } })), env: ENV, log: () => {} });
+    const r = await c.reply({ message: 'hi', ctx: null });
+    assert.strictEqual(r.reply, null);
+    assert.strictEqual(r.error, code, `HTTP ${status}`);
+  }
+  const offline = createCompanion({ fetchFn: async () => { throw new TypeError('fetch failed'); }, env: ENV, log: () => {} });
+  assert.strictEqual((await offline.reply({ message: 'hi', ctx: null })).error, 'offline');
 });
 
-test('no credentials / offline → an error, never a fake reply', async () => {
-  const offline = fakeClient(() => { throw new Anthropic.APIConnectionError({ message: 'down' }); });
-  const c1 = createCompanion({ client: offline, log: () => {} });
-  const r1 = await c1.reply({ message: 'hi', ctx: null });
-  assert.strictEqual(r1.reply, null);
-  assert.strictEqual(r1.error, 'offline');
+test('no GROQ_API_KEY → not connected, and no request is made', async () => {
+  const f = fakeFetch(() => textReply('x'));
+  const c = createCompanion({ fetchFn: f, env: {}, log: () => {} });
+  assert.strictEqual(c.status().connected, false);
+  const r = await c.reply({ message: 'hi', ctx: null });
+  assert.strictEqual(r.error, 'not_connected');
+  assert.match(r.errorText, /GROQ_API_KEY/);
+  assert.strictEqual(f.calls.length, 0);
+});
 
-  const noKey = fakeClient(() => { throw new Error('Could not resolve authentication method. Expected the apiKey to be set.'); });
-  const c2 = createCompanion({ client: noKey, log: () => {} });
-  const r2 = await c2.reply({ message: 'hi', ctx: null });
-  assert.strictEqual(r2.error, 'not_connected');
-  assert.match(r2.errorText, /ANTHROPIC_API_KEY/);
-  assert.strictEqual(c2.status().connected, false);
+test('a stray space before "=" in .env still finds the key', () => {
+  assert.strictEqual(groqKey({ 'GROQ_API_KEY ': ' abc ' }), 'abc');
+  assert.strictEqual(groqKey({ GROQ_API_KEY: '' }), null);
 });
 
 test('demo companion stays scripted and offline', async () => {
@@ -105,7 +116,7 @@ test('connector status reads the Claude Desktop config without exposing other se
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('real mode removes demo-seeded history; status is honest before the first call', async () => {
+test('real mode removes demo-seeded history', () => {
   const { tempMemory } = require('../helpers');
   const mem = tempMemory();
   try {
@@ -114,9 +125,4 @@ test('real mode removes demo-seeded history; status is honest before the first c
     assert.ok(mem.memory.dropDemo() > 0);
     assert.strictEqual(Object.keys(mem.memory.calendar()).length, 0);
   } finally { mem.cleanup(); }
-  const saved = { a: process.env.ANTHROPIC_API_KEY, b: process.env.ANTHROPIC_AUTH_TOKEN, c: process.env.ATTUNE_ANTHROPIC_KEY };
-  try {
-    delete process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_AUTH_TOKEN; process.env.ATTUNE_ANTHROPIC_KEY = '';
-    assert.strictEqual(createCompanion({ log: () => {} }).status().connected, false);
-  } finally { for (const [k, v] of [['ANTHROPIC_API_KEY', saved.a], ['ANTHROPIC_AUTH_TOKEN', saved.b], ['ATTUNE_ANTHROPIC_KEY', saved.c]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 });

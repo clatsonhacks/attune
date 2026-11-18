@@ -4,6 +4,7 @@
 process.env.ATTUNE_ADAPTER = 'mock';
 process.env.SMARTSPECTRA_API_KEY = '';
 process.env.ATTUNE_ANTHROPIC_KEY = '';
+process.env.GROQ_API_KEY = '';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

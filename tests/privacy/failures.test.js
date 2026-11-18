@@ -92,7 +92,7 @@ test('worker messages are rebuilt from an allowlist', () => {
 });
 
 test('worker environment excludes unrelated secrets', () => {
-  const env = buildWorkerEnv('smartspectra', {}, { PATH: '/bin', SMARTSPECTRA_API_KEY: 'k', ATTUNE_ANTHROPIC_KEY: 'secret', AWS_SECRET_ACCESS_KEY: 'x' });
+  const env = buildWorkerEnv('smartspectra', {}, { PATH: '/bin', SMARTSPECTRA_API_KEY: 'k', ATTUNE_ANTHROPIC_KEY: 'secret', GROQ_API_KEY: 'g', AWS_SECRET_ACCESS_KEY: 'x' });
   assert.deepStrictEqual(Object.keys(env).sort(), ['ATTUNE_WORKER_ADAPTER', 'PATH', 'SMARTSPECTRA_API_KEY']);
   assert.ok(!('SMARTSPECTRA_API_KEY' in buildWorkerEnv('mock', {}, { SMARTSPECTRA_API_KEY: 'k' })));
 });
