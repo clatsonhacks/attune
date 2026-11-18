@@ -12,6 +12,7 @@
  * Run: npm run web   (PORT env optional, default 3000; settings can live in .env)
  */
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createSession } = require('./session');
@@ -28,6 +29,12 @@ const { normalizeInsight } = require('./insights/normalizer');
 
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
+// Third-party UI libraries, served from node_modules (no CDN, works offline). Explicit allowlist only.
+const OS_DIR = path.join(__dirname, '..', 'node_modules', 'overlayscrollbars');
+const VENDOR = {
+  '/vendor/overlayscrollbars.css': path.join(OS_DIR, 'styles', 'overlayscrollbars.min.css'),
+  '/vendor/overlayscrollbars.js': path.join(OS_DIR, 'browser', 'overlayscrollbars.browser.es6.min.js'),
+};
 const NO_CONTEXT = { state: 'off', say: false, directive: null, suggestedUtterance: null, confidence: 0 };
 
 function createApp({
@@ -104,10 +111,13 @@ function createApp({
       const headers = { 'content-type': MIME[path.extname(full)] || 'application/octet-stream', 'x-content-type-options': 'nosniff' };
       if (full.endsWith('index.html')) {
         // Hand the session token to our own page only; other origins can't read this response.
-        data = Buffer.from(String(data).replace('</head>', `  <meta name="attune-token" content="${guard.token}" />\n</head>`));
+        // The per-response style nonce lets the scrollbar library's one measuring <style> through CSP.
+        const nonce = crypto.randomBytes(16).toString('base64');
+        data = Buffer.from(String(data).replace('</head>',
+          `  <meta name="attune-token" content="${guard.token}" />\n  <meta name="attune-style-nonce" content="${nonce}" />\n</head>`));
         headers['cache-control'] = 'no-store';
         headers['content-security-policy'] =
-          "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+          `default-src 'self'; style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'`;
       }
       res.writeHead(200, headers);
       res.end(data);
@@ -192,6 +202,13 @@ function createApp({
     }
     if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus());
 
+    if (method === 'GET' && VENDOR[url]) {
+      return fs.readFile(VENDOR[url], (err, data) => {
+        if (err) return sendJSON(res, 404, { error: 'not found' });
+        res.writeHead(200, { 'content-type': MIME[path.extname(VENDOR[url])], 'cache-control': 'max-age=3600', 'x-content-type-options': 'nosniff' });
+        res.end(data);
+      });
+    }
     if (method === 'GET' && !isApi) return serveStatic(res, url);
     sendJSON(res, isApi ? 404 : 405, { error: isApi ? 'not found' : 'method not allowed' });
   }
