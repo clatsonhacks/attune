@@ -33,4 +33,20 @@ const stale = map(pulseOnly, 6000);
 assert.strictEqual(stale.expression, 'unknown');
 assert.strictEqual(stale.expressionConfidence, 0);
 
+// breathing rate + HRV (RMSSD) from the real schema
+const slow = decodeMetrics(Buffer.from(Metrics.encode(Metrics.create({
+  breathing: { rate: [{ value: 14, confidence: 60, stable: true }] },
+  cardio: { hrv: [{ rmssd: 42.5, sdnn: 50, confidence: 70, stable: true }] },
+})).finish()));
+const xs = extractMetrics(slow);
+assert.strictEqual(xs.breathingRate, 14);
+assert.ok(Math.abs(xs.breathingConfidence - 0.6) < 1e-6);
+assert.strictEqual(xs.hrvMs, 42.5);
+assert.ok(Math.abs(xs.hrvConfidence - 0.7) < 1e-6);
+const m2 = createMapper();
+const merged2 = m2(slow, 1000);
+assert.strictEqual(merged2.breathingRate, 14);
+assert.strictEqual(m2(pulseOnly, 15000).breathingRate, 14);   // slow signals keep a 20 s window
+assert.strictEqual(m2(pulseOnly, 25000).breathingRate, null);
+
 console.log('OK — SmartSpectra mapping matches the SDK protobuf schema');

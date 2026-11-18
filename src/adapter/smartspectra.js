@@ -1,20 +1,26 @@
 'use strict';
 /*
- * Real SmartSpectra adapter — maps the Presage Node SDK (@smartspectra/node-sdk v3.x) to our
- * onSample(sample) contract.
+ * Real SmartSpectra adapter — maps the Presage Node SDK (@smartspectra/node-sdk 3.5.0) to our
+ * start(onSample, { onInsight, onError }) contract.
  *
  * SDK shape (from the package's index.d.ts):
  *   const sdk = new SmartSpectraSDK({ apiKey, requestedMetrics, enableTelemetry });
- *   sdk.on('metrics', (buf, tsUs) => decodeMetrics(buf));   // protobuf presage.smartspectra.Metrics
- *   sdk.useCamera(CameraSelection.default); sdk.start();  …  await sdk.stopAsync(); await sdk.destroy();
+ *   sdk.on('metrics', (buf, tsUs))  → decodeMetrics(buf) → presage.smartspectra.Metrics
+ *   sdk.on('insight', (buf, requestId)) → our decoder (src/insights/decoder.js); the SDK ships none
+ *   sdk.useCamera(CameraSelection.default); sdk.start(); … await sdk.stopAsync(); await sdk.destroy();
  *
- * Signals used (per the model cards): pulse rate + facial expression + talking (+ blinking).
- * Live HRV/breathing are NOT used (30-60s windows; breathing fails while talking). Metric packets
- * are partial, so we keep the last-known value of each signal and drop it once stale. Low-confidence
- * or missing signals pass through as low-confidence samples so the interpreter enters "unclear".
+ * Metrics: breathing + cardio sets (required by Presage for Insights) plus expressions/talking/blinking.
+ * Packets are partial, so each signal keeps its last value and expires after STALE_MS. Low-confidence or
+ * missing signals pass through as low-confidence samples so the interpreter enters "unclear".
+ *
+ * Insights: Presage fires them automatically (≈15 s after start, then every 60 s) and on requestInsight().
+ * They are never awaited; they arrive later through onInsight. Requested vs automatic is decided by
+ * request id, as Presage's docs advise (the `type` field is always VITALS today).
  */
+const { decodeInsight } = require('../insights/decoder');
 
 const STALE_MS = 3000;
+const INSIGHT_MIN_INTERVAL_MS = 30000; // rate limit for user-requested insights
 
 // presage.smartspectra.ExpressionType → interpreter vocabulary
 const EXPRESSION_NAMES = {
@@ -29,6 +35,7 @@ const EXPRESSION_NAMES = {
 };
 
 const last = (arr) => (Array.isArray(arr) && arr.length ? arr[arr.length - 1] : null);
+const pct = (c, stable) => (typeof c === 'number' ? c / 100 : stable ? 0.8 : 0.3);
 
 /**
  * Pull the newest readings out of one decoded Metrics packet. Returns only the fields present.
@@ -39,7 +46,17 @@ function extractMetrics(m) {
   const pulse = last(m && m.cardio && m.cardio.pulseRate);
   if (pulse && typeof pulse.value === 'number' && pulse.value > 0) {
     out.pulseBpm = pulse.value;
-    out.pulseConfidence = typeof pulse.confidence === 'number' ? pulse.confidence / 100 : (pulse.stable ? 0.8 : 0.3);
+    out.pulseConfidence = pct(pulse.confidence, pulse.stable);
+  }
+  const breath = last(m && m.breathing && m.breathing.rate);
+  if (breath && typeof breath.value === 'number' && breath.value > 0) {
+    out.breathingRate = breath.value;
+    out.breathingConfidence = pct(breath.confidence, breath.stable);
+  }
+  const hrv = last(m && m.cardio && m.cardio.hrv);
+  if (hrv && typeof hrv.rmssd === 'number' && hrv.rmssd > 0) {
+    out.hrvMs = hrv.rmssd;
+    out.hrvConfidence = pct(hrv.confidence, hrv.stable);
   }
   const expr = last(m && m.face && m.face.expression);
   if (expr && Array.isArray(expr.scores) && expr.scores.length) {
@@ -54,21 +71,29 @@ function extractMetrics(m) {
 
 /** Stateful mapper: merges partial packets into full samples, expiring stale signals. */
 function createMapper() {
-  const state = { pulse: null, expr: null, talking: null };
+  const state = {};
+  const keep = (k, v, conf, t) => { state[k] = { v, conf, t }; };
   return function map(decoded, nowMs = Date.now()) {
     const x = extractMetrics(decoded);
-    if (x.pulseBpm != null) state.pulse = { bpm: x.pulseBpm, conf: x.pulseConfidence, t: nowMs };
-    if (x.expression != null) state.expr = { name: x.expression, conf: x.expressionConfidence, t: nowMs };
-    if (x.talking != null) state.talking = { on: x.talking, t: nowMs };
-    const fresh = (v) => v && nowMs - v.t <= STALE_MS;
+    if (x.pulseBpm != null) keep('pulse', x.pulseBpm, x.pulseConfidence, nowMs);
+    if (x.breathingRate != null) keep('breath', x.breathingRate, x.breathingConfidence, nowMs);
+    if (x.hrvMs != null) keep('hrv', x.hrvMs, x.hrvConfidence, nowMs);
+    if (x.expression != null) keep('expr', x.expression, x.expressionConfidence, nowMs);
+    if (x.talking != null) keep('talking', x.talking, 1, nowMs);
+    const f = (k) => (state[k] && nowMs - state[k].t <= STALE_MS ? state[k] : null);
     return {
       tMs: nowMs,
-      pulseBpm: fresh(state.pulse) ? state.pulse.bpm : null,
-      pulseConfidence: fresh(state.pulse) ? state.pulse.conf : 0,
-      expression: fresh(state.expr) ? state.expr.name : 'unknown',
-      expressionConfidence: fresh(state.expr) ? state.expr.conf : 0,
-      talking: fresh(state.talking) ? state.talking.on : false,
+      pulseBpm: f('pulse') ? f('pulse').v : null,
+      pulseConfidence: f('pulse') ? f('pulse').conf : 0,
+      expression: f('expr') ? f('expr').v : 'unknown',
+      expressionConfidence: f('expr') ? f('expr').conf : 0,
+      talking: f('talking') ? f('talking').v : false,
       speechFast: false, // not provided by the SDK
+      // Slow signals keep a longer window: breathing/HRV update every several seconds.
+      breathingRate: state.breath && nowMs - state.breath.t <= 20000 ? state.breath.v : null,
+      breathingConfidence: state.breath && nowMs - state.breath.t <= 20000 ? state.breath.conf : 0,
+      hrvMs: state.hrv && nowMs - state.hrv.t <= 90000 ? state.hrv.v : null,
+      hrvConfidence: state.hrv && nowMs - state.hrv.t <= 90000 ? state.hrv.conf : 0,
     };
   };
 }
@@ -78,14 +103,19 @@ const LOW_CONFIDENCE = () => ({
   expression: 'unknown', expressionConfidence: 0, talking: false, speechFast: false,
 });
 
+// SmartSpectraErrorCode values that mean the camera/device went away rather than a transient hiccup.
+const DEVICE_LOST = /camera|device|input|unavailable|disconnect/i;
+
 function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
   let sdk = null;
+  const pending = new Set(); // request ids we asked for
+  let lastRequestAt = 0;
 
   return {
     name: 'smartspectra',
     extractMetrics, // exported for unit-testing the mapping against real decodeMetrics output
 
-    start(onSample) {
+    start(onSample, { onInsight = () => {}, onError = () => {} } = {}) {
       if (!apiKey) throw new Error('SMARTSPECTRA_API_KEY is required for the smartspectra adapter.');
       let lib;
       try {
@@ -93,19 +123,29 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
       } catch (e) {
         throw new Error(`could not load @smartspectra/node-sdk (${e.message}). Run \`npm install\`.`);
       }
-      const { SmartSpectraSDK, CameraSelection, MetricType, decodeMetrics } = lib;
+      const { SmartSpectraSDK, CameraSelection, MetricType, decodeMetrics, breathingMetrics, cardioMetrics } = lib;
       const map = createMapper();
 
       sdk = new SmartSpectraSDK({
         apiKey,
-        enableTelemetry: false,
-        requestedMetrics: [MetricType.PULSE_RATE, MetricType.EXPRESSIONS, MetricType.TALKING, MetricType.BLINKING],
+        enableTelemetry: false, // SDK telemetry only; does NOT stop Insights/auth traffic to Presage
+        requestedMetrics: [...breathingMetrics, ...cardioMetrics, MetricType.EXPRESSIONS, MetricType.TALKING, MetricType.BLINKING],
       });
       sdk.on('metrics', (buf) => {
         try {
           onSample(map(decodeMetrics(buf), Date.now()));
         } catch (err) {
           onSample(LOW_CONFIDENCE()); // decode failure → interpreter goes "unclear"
+        }
+      });
+      sdk.on('insight', (buf, requestId) => {
+        try {
+          const insight = decodeInsight(buf);
+          const id = typeof requestId === 'number' ? requestId : insight.requestId;
+          const requested = pending.delete(id);
+          onInsight({ ...insight, requestId: id, requested });
+        } catch (e) {
+          log(`could not decode an Insight (${e.message})`);
         }
       });
       // A non-zero validation code (e.g. "No face found") means no metrics will arrive, so feed the
@@ -120,6 +160,7 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
       sdk.on('error', (code, message, retryable) => {
         log(`SmartSpectra error ${code}: ${message}${retryable ? ' (retryable)' : ''}`);
         onSample(LOW_CONFIDENCE());
+        if (!retryable) onError({ code: DEVICE_LOST.test(String(message)) ? 'device_unavailable' : 'sdk_error', message: String(message) });
       });
 
       sdk.useCamera(CameraSelection.default);
@@ -127,10 +168,22 @@ function createSmartSpectraAdapter({ apiKey, log = (m) => process.stderr.write(`
       log('SmartSpectra capture started on the default camera');
     },
 
+    /** User-initiated on-demand Insight. Returns the request id, or null if rate-limited/not running. */
+    requestInsight(text) {
+      if (!sdk) return null;
+      const now = Date.now();
+      if (now - lastRequestAt < INSIGHT_MIN_INTERVAL_MS) return null;
+      lastRequestAt = now;
+      const id = sdk.requestInsight(String(text).slice(0, 500));
+      pending.add(id);
+      return id;
+    },
+
     async stop() {
       if (!sdk) return;
       const s = sdk;
       sdk = null;
+      pending.clear();
       try { await s.stopAsync(); } catch {}
       try { await s.destroy(); } catch {}
     },
