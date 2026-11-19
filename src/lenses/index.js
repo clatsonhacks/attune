@@ -23,6 +23,8 @@ function register(lens) {
 }
 
 register(require('./companion'));
+register(require('./yoga'));
+register(require('./casual'));
 
 const getLens = (id) => LENSES.get(String(id || '').toLowerCase()) || null;
 
