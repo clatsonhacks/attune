@@ -152,3 +152,16 @@ test('real mode removes demo-seeded history', () => {
     assert.strictEqual(Object.keys(mem.memory.calendar()).length, 0);
   } finally { mem.cleanup(); }
 });
+
+test('Claude Desktop config path prefers the Microsoft Store data folder on Windows', () => {
+  const { claudeDesktopConfigPath } = require('../../src/connectors');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-store-'));
+  try {
+    const env = { LOCALAPPDATA: path.join(dir, 'Local'), APPDATA: path.join(dir, 'Roaming') };
+    assert.strictEqual(claudeDesktopConfigPath('win32', env, dir), path.join(dir, 'Roaming', 'Claude', 'claude_desktop_config.json'));
+    fs.mkdirSync(path.join(dir, 'Local', 'Claude-Data', 'claude_pzs8sxrjxfjjc'), { recursive: true });
+    assert.strictEqual(claudeDesktopConfigPath('win32', env, dir),
+      path.join(dir, 'Local', 'Claude-Data', 'claude_pzs8sxrjxfjjc', 'claude_desktop_config.json'));
+    assert.match(claudeDesktopConfigPath('darwin', env, dir), /Application Support/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

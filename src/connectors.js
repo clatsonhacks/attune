@@ -11,8 +11,27 @@ const { parseConsentString } = require('./privacy/consent');
 const SERVER_JS = path.resolve(__dirname, 'server.js');
 const DEFAULT_CONSENT = 'sensing,presage-ack,ai-sharing';
 
+/**
+ * The Microsoft Store build of Claude Desktop keeps its data in %LOCALAPPDATA%\Claude-Data\claude_<publisher-id>\
+ * and reads claude_desktop_config.json from there, not from %APPDATA%\Claude. Prefer it when present (the most
+ * recently used one if there are several).
+ */
+function storeClaudeDataDir(env = process.env, home = os.homedir()) {
+  const base = path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Claude-Data');
+  let dirs;
+  try { dirs = fs.readdirSync(base, { withFileTypes: true }); } catch { return null; }
+  const found = dirs.filter((d) => d.isDirectory() && /^claude_[a-z0-9]+$/i.test(d.name))
+    .map((d) => { const p = path.join(base, d.name); let t = 0; try { t = fs.statSync(p).mtimeMs; } catch {} return { p, t }; })
+    .sort((a, b) => b.t - a.t);
+  return found.length ? found[0].p : null;
+}
+
 function claudeDesktopConfigPath(platform = process.platform, env = process.env, home = os.homedir()) {
-  if (platform === 'win32') return path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
+  if (platform === 'win32') {
+    const store = storeClaudeDataDir(env, home);
+    if (store) return path.join(store, 'claude_desktop_config.json');
+    return path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
+  }
   if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
   return path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'Claude', 'claude_desktop_config.json');
 }
