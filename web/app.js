@@ -67,7 +67,7 @@ function proposeMood(m, immediate = false) {
 }
 
 /* ---------- Views ---------- */
-const TITLES = { home: 'Companion', memory: 'Memory', connectors: 'Connectors' };
+const TITLES = { home: 'Companion', memory: 'Memory', connectors: 'Connectors', activity: 'Activity' };
 let currentView = 'home';
 function switchView(v) {
   currentView = v;
@@ -79,6 +79,7 @@ function switchView(v) {
   $('htitle').textContent = TITLES[v] || '';
   if (v === 'memory') loadCalendar();
   if (v === 'connectors') refreshApps(true).then(loadConnectors);
+  if (v === 'activity') refreshApps().then(() => loadActivity());
 }
 document.querySelectorAll('.navitem').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -471,6 +472,56 @@ function relTime(at) {
   return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/* ---------- Activity: who read which purpose, and when (number-free log) ---------- */
+const KIND_ICON = { context: 'check', request: 'bell', denied: 'close', unknown: 'close' };
+const BLOCKED_STATES = new Set(['consent_required', 'unavailable']);
+const STATE_WORDS = { consent_required: "couldn't read — camera or sharing is off", unavailable: "couldn't read — camera unavailable",
+  starting: 'read context — camera starting', calibrating: 'read context — still tuning in', off: 'read context — camera off',
+  stale: 'read context — reading too old', paused: 'read context — camera paused', unclear: 'read context — signal unclear' };
+function describeEvent(e) {
+  const lens = e.lens ? lensName(e.lens) : null;
+  if (e.kind === 'request') return `asked for ${lens || 'a purpose'} (waiting for you)`;
+  if (e.kind === 'denied') return `asked for ${lens || 'a purpose'} (not approved)`;
+  if (e.kind === 'unknown') return 'asked for an unknown purpose';
+  const base = (e.state && STATE_WORDS[e.state]) || `read context — ${e.state ? e.state.replace(/_/g, ' ') : 'no state'}`;
+  return e.say ? `${base} · shared a gentle cue` : base;
+}
+let activitySig = '';
+async function loadActivity(force = false) {
+  let r;
+  try { r = await api('/api/activity?limit=200'); } catch { return; }
+  const events = (Array.isArray(r.events) ? r.events : []).slice().sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  // Rebuild when the log changes, and once a minute anyway so the relative times stay right.
+  const sig = JSON.stringify(events) + ':' + Math.floor(Date.now() / 60000);
+  if (!force && sig === activitySig) return;
+  activitySig = sig;
+  $('actEmpty').hidden = events.length > 0;
+  $('actHost').hidden = !events.length;
+  $('clearActivity').disabled = !events.length;
+  $('actList').replaceChildren(...events.map((e) => {
+    const blocked = e.kind === 'context' && BLOCKED_STATES.has(e.state);
+    const li = el('li', `act-row k-${blocked ? 'blocked' : e.kind}`);
+    const ic = el('span', 'act-ic');
+    ic.innerHTML = icon(blocked ? 'lock' : KIND_ICON[e.kind] || 'history', 'sm');
+    const body = el('div', 'act-body');
+    const top = el('div', 'act-top');
+    top.append(el('b', null, appName(e.app)));
+    if (e.lens) top.append(el('span', 'act-lens', lensName(e.lens)));
+    body.append(top, el('div', 'act-what', describeEvent(e)));
+    const time = el('time', 'act-time', relTime(e.at));
+    time.dateTime = e.at;
+    time.title = new Date(e.at).toLocaleString();
+    li.append(ic, body, time);
+    return li;
+  }));
+}
+$('clearActivity').onclick = async () => {
+  if (!confirm('Clear all activity?\n\nThis deletes the list of which apps used Attune. It does not change any approvals.')) return;
+  try { await api('/api/activity/clear', {}); } catch {}
+  await loadActivity(true);
+  $('actEmpty').focus();
+};
+
 /* ---------- Parallel signal agents ---------- */
 let lastSignals = [], selectedSignal = null;
 function renderSignals(sigs) {
@@ -702,6 +753,7 @@ scrollArea($('dayDetail'));
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
 loadLenses().then(() => refreshApps(true));
-// Requests made by an AI show up (badge + card) without a reload.
-setInterval(() => refreshApps(), 4000);
+// Requests made by an AI show up (badge + card) without a reload; the activity list refreshes while it is open.
+setInterval(() => { refreshApps(); if (currentView === 'activity') loadActivity(); }, 4000);
+scrollArea($('actHost'), $('actList'));
 addMsg("Hi — I'm here with you. If you turn on sensing (and choose to share it with me), I'll pay attention to how you're doing, not just what you say.", 'bot');

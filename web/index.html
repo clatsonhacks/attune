@@ -23,6 +23,7 @@
         <button class="navitem active" data-view="home"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Companion</button>
         <button class="navitem" data-view="memory"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-memory"/></svg>Memory</button>
         <button class="navitem" data-view="connectors"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-connectors"/></svg>Connectors<span class="nbadge" id="pendingBadge" hidden></span></button>
+        <button class="navitem" data-view="activity"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-history"/></svg>Activity</button>
       </nav>
       <div class="side-foot"><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>local-only</span><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-pulse"/></svg>non-medical</span></div>
     </aside>
@@ -164,6 +165,17 @@
         </div>
       </section>
 
+      <!-- ACTIVITY -->
+      <section class="view" id="view-activity" hidden>
+        <div class="activity glass">
+          <div class="act-head">
+            <div><b>Who used Attune</b><span>Each time an app reads Attune or asks for a purpose. Only the app, purpose and outcome are kept — never numbers.</span></div>
+            <button class="mini danger" id="clearActivity"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-trash"/></svg>Clear activity</button>
+          </div>
+          <div class="scroll-host act-host" id="actHost"><ul class="act-list" id="actList" aria-label="Activity, newest first"></ul></div>
+          <p class="act-empty" id="actEmpty" tabindex="-1" hidden>No activity yet. When an AI app reads Attune or asks for a purpose, it shows up here.</p>
+        </div>
+      </section>
     </main>
   </div>
 
