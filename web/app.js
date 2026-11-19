@@ -605,11 +605,14 @@ function tickPacer() {
   if ($('pacerWord').textContent !== word) $('pacerWord').textContent = word;
   $('pacer').dataset.phase = inhale ? 'in' : 'out';
 }
-function renderMeasuredBreath(signals, sensingActive) {
+function renderMeasuredBreath(signals, sensingActive, breath) {
+  // Prefer the measured rate the yoga lens uses; fall back to the breathing tile.
   const b = (signals || []).find((x) => x.id === 'breathing');
-  const v = b && /\d\/min$/.test(b.value || '') ? b.value : null;
+  const measured = breath && typeof breath.perMin === 'number' ? `${breath.perMin}/min` : null;
+  const v = measured || (b && /\d\/min$/.test(b.value || '') ? b.value : null);
+  const talking = (breath && breath.talking) || (b && b.value === 'paused');
   const m = $('pacerMeasured');
-  const text = v ? `You: ${v}` : sensingActive ? (b && b.value === 'paused' ? 'You: paused (talking)' : 'You: measuring…') : '';
+  const text = v ? `You: ${v}` : sensingActive ? (talking ? 'You: paused (talking)' : 'You: measuring…') : '';
   if (m.textContent !== text) m.textContent = text;
   m.hidden = !text;
 }
@@ -692,7 +695,7 @@ async function poll() {
     const errored = s.sensing && s.sensing.state === 'error';
     renderCamera(s, c, active, errored);
     if (s.lensMode && s.lensMode !== lensMode && !modeBusy) { lensMode = s.lensMode; renderModeSeg(); syncPacer(); }
-    renderMeasuredBreath(s.signals, active);
+    renderMeasuredBreath(s.signals, active, s.breath);
     $('insightBox').hidden = !active;
     if (s.insight) {
       if ($('insightText').textContent !== s.insight.text) $('insightText').textContent = s.insight.text;

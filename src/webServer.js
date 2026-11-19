@@ -210,7 +210,10 @@ function createApp({
     }
     const ctx = session.getBodyContext();
     // Measurements are shown to the consenting human only; the AI path uses bridge.getLensContext().
-    return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), insight: bridge.getHumanView().insight };
+    // Measured breathing for the person's own pacer (human UI only; AI apps get it only via an approved yoga lens).
+    const snap = session.getNeutralSnapshot();
+    const breath = { perMin: snap.breathingRate != null && snap.breathingConfidence >= 0.4 ? Math.round(snap.breathingRate) : null, talking: snap.talking };
+    return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), breath, insight: bridge.getHumanView().insight };
   }
 
   async function handle(req, res) {
