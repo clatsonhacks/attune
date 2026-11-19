@@ -22,7 +22,7 @@
       <nav class="nav">
         <button class="navitem active" data-view="home"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Companion</button>
         <button class="navitem" data-view="memory"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-memory"/></svg>Memory</button>
-        <button class="navitem" data-view="connectors"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-connectors"/></svg>Connectors</button>
+        <button class="navitem" data-view="connectors"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-connectors"/></svg>Connectors<span class="nbadge" id="pendingBadge" hidden></span></button>
       </nav>
       <div class="side-foot"><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>local-only</span><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-pulse"/></svg>non-medical</span></div>
     </aside>
@@ -149,11 +149,21 @@
 
       <!-- CONNECTORS -->
       <section class="view" id="view-connectors" hidden>
+        <div class="pending-card glass" id="pendingCard" hidden>
+          <div class="pending-head"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-bell"/></svg><b id="pendingTitle">An app is asking for a new purpose</b></div>
+          <p class="pending-sub">An AI can only ask. Nothing changes until you choose.</p>
+          <ul class="pending-list" id="pendingList" aria-labelledby="pendingTitle"></ul>
+        </div>
         <div class="connectors glass">
-          <div class="conn-head"><b>Use Attune in other AI apps</b><span>Connect Claude Desktop or ChatGPT, or copy the MCP setup for another client.</span></div>
+          <div class="conn-head"><b>Use Attune in other AI apps</b><span>Connect Claude Desktop or ChatGPT, or copy the MCP setup for another client. Each app may only use the purposes you turn on.</span></div>
           <div id="connList"></div>
+          <div class="apps-sec" id="appsSec" hidden>
+            <b class="sec-title">Other apps</b>
+            <div id="appList"></div>
+          </div>
         </div>
       </section>
+
     </main>
   </div>
 

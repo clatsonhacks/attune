@@ -33,8 +33,8 @@ if (OverlayScrollbars) {
   if (nonce) OverlayScrollbars.nonce(nonce); // must be set before the first instance is created
 }
 function scrollArea(host, viewport, opts = SCROLL_OPTS) {
-  if (!OverlayScrollbars || !host) return;
-  OverlayScrollbars(viewport ? { target: host, elements: { viewport, content: false } } : host, opts);
+  if (!OverlayScrollbars || !host) return null;
+  return OverlayScrollbars(viewport ? { target: host, elements: { viewport, content: false } } : host, opts);
 }
 
 /* ---------- Icons (assets/icons.svg sprite) ---------- */
@@ -68,12 +68,17 @@ function proposeMood(m, immediate = false) {
 
 /* ---------- Views ---------- */
 const TITLES = { home: 'Companion', memory: 'Memory', connectors: 'Connectors' };
+let currentView = 'home';
 function switchView(v) {
-  document.querySelectorAll('.navitem').forEach((n) => n.classList.toggle('active', n.dataset.view === v));
+  currentView = v;
+  document.querySelectorAll('.navitem').forEach((n) => {
+    n.classList.toggle('active', n.dataset.view === v);
+    if (n.dataset.view === v) n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.view').forEach((s) => (s.hidden = s.id !== 'view-' + v));
   $('htitle').textContent = TITLES[v] || '';
   if (v === 'memory') loadCalendar();
-  if (v === 'connectors') loadConnectors();
+  if (v === 'connectors') refreshApps(true).then(loadConnectors);
 }
 document.querySelectorAll('.navitem').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -133,6 +138,10 @@ function connectorLink(label, href) {
   return link;
 }
 
+// Setup snippets scroll sideways inside a thin overlay scrollbar (instances are destroyed when the list is rebuilt).
+const SNIPPET_SCROLL = { ...SCROLL_OPTS, overflow: { x: 'scroll', y: 'hidden' } };
+let snippetScrolls = [];
+
 function copyConnectorText(text, label) {
   const button = el('button', 'mini', label);
   const feedback = el('span');
@@ -147,8 +156,10 @@ function copyConnectorText(text, label) {
   };
   const pre = el('pre', 'snippet', text);
   pre.tabIndex = 0;
+  const host = el('div', 'snippet-host');
+  host.append(pre);
   const block = el('div');
-  block.append(pre, button, feedback);
+  block.append(host, button, feedback);
   return block;
 }
 
@@ -230,6 +241,8 @@ async function loadConnectors() {
   const list = $('connList');
   try {
     const result = await api('/api/connectors');
+    snippetScrolls.forEach((s) => s && s.destroy());
+    snippetScrolls = [];
     list.replaceChildren();
     for (const connector of result.connectors) {
       const row = el('div', connector.registered ? 'conn-row on' : 'conn-row');
@@ -247,12 +260,215 @@ async function loadConnectors() {
           copyConnectorText(connector.snippet, 'Copy JSON'));
         meta.append(setup);
       }
+      if (KNOWN_APPS[connector.id]) {
+        const slot = el('div', 'purposes-slot');
+        slot.dataset.app = connector.id;
+        meta.append(slot);
+      }
       row.append(avatar, meta);
       list.append(row);
     }
+    list.querySelectorAll('.snippet-host').forEach((host) => snippetScrolls.push(scrollArea(host, host.firstChild, SNIPPET_SCROLL)));
   } catch {
     list.replaceChildren(el('p', null, 'Could not load connectors. Reopen this page to try again.'));
   }
+  renderApps();
+}
+
+/* ---------- Purposes (lenses) each app may use, and requests waiting for the person ---------- */
+// Only the person decides here; an AI can ask for a purpose (shown as a pending request) but never approve one.
+const KNOWN_APPS = { 'claude-desktop': 'Claude Desktop', chatgpt: 'ChatGPT' };
+let lenses = [], appsData = { apps: [], pending: [] }, appsSig = '';
+const lensById = (id) => lenses.find((l) => l.id === id);
+const lensName = (id) => (lensById(id) || {}).name || id || 'an unknown purpose';
+const appEntry = (id) => appsData.apps.find((a) => a.id === id);
+const appName = (id) => (appEntry(id) || {}).name || KNOWN_APPS[id] || id;
+
+async function loadLenses() {
+  try { const r = await api('/api/lenses'); lenses = Array.isArray(r.lenses) ? r.lenses : []; } catch {}
+}
+
+async function refreshApps(force = false) {
+  let r;
+  try { r = await api('/api/apps'); } catch { return; }
+  if (!r || !Array.isArray(r.apps)) return;
+  const next = { apps: r.apps, pending: Array.isArray(r.pending) ? r.pending : [] };
+  const sig = JSON.stringify(next);
+  if (!force && sig === appsSig) return;
+  appsData = next; appsSig = sig;
+  renderBadge();
+  renderApps();
+}
+
+function renderBadge() {
+  const n = appsData.pending.length, b = $('pendingBadge');
+  b.hidden = !n;
+  b.textContent = n > 9 ? '9+' : String(n);
+  b.setAttribute('aria-label', n === 1 ? '1 request waiting' : `${n} requests waiting`);
+}
+
+// Rebuilding a list must not throw away keyboard focus: remember the focused control by key and restore it.
+function keepFocus(container, build) {
+  const a = document.activeElement;
+  const k = a && container.contains(a) ? a.dataset.fkey : null;
+  build();
+  if (k) { const n = container.querySelector(`[data-fkey="${CSS.escape(k)}"]`); if (n && !n.disabled) n.focus(); }
+}
+
+async function decide(app, lens, allow, status) {
+  const body = { app, lens, allow };
+  const known = (appEntry(app) || {}).name || KNOWN_APPS[app];
+  if (known) body.name = known;
+  try {
+    const r = await api('/api/apps/lens', body);
+    if (!r.ok) throw new Error(r.error || 'failed');
+  } catch (e) {
+    if (status) status.textContent = e.message && e.message !== 'failed' ? e.message : 'Could not save that. Try again.';
+    await refreshApps(true);
+    return false;
+  }
+  await refreshApps(true);
+  return true;
+}
+
+function renderPending() {
+  const card = $('pendingCard'), list = $('pendingList');
+  const items = [...appsData.pending].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  card.hidden = !items.length;
+  $('pendingTitle').textContent = items.length === 1 ? 'An app is asking for a new purpose' : `${items.length} requests are waiting for you`;
+  keepFocus(list, () => {
+    list.replaceChildren(...items.map((p) => {
+      const li = el('li', 'pending-row');
+      const text = el('div', 'pending-text');
+      const line = el('div', 'pending-line');
+      line.append(el('b', null, appName(p.app)), document.createTextNode(' asked to use '), el('b', null, lensName(p.lens)));
+      const lens = lensById(p.lens);
+      const sub = el('small', null, `${relTime(p.at)}${lens ? ' · ' + lens.description : ''}`);
+      text.append(line, sub);
+      if (lens && lens.sharesNumbers) text.append(numNote(true));
+      const status = el('span', 'pending-status');
+      status.setAttribute('role', 'status');
+      text.append(status);
+      const allow = el('button', 'cta small');
+      allow.innerHTML = icon('check', 'sm');
+      allow.append('Allow');
+      const deny = el('button', 'mini');
+      deny.innerHTML = icon('close', 'sm');
+      deny.append('Deny');
+      allow.dataset.fkey = `allow:${p.app}:${p.lens}`;
+      deny.dataset.fkey = `deny:${p.app}:${p.lens}`;
+      const label = `${appName(p.app)} — ${lensName(p.lens)}`;
+      allow.setAttribute('aria-label', `Allow ${label}`);
+      deny.setAttribute('aria-label', `Deny ${label}`);
+      const act = async (yes) => {
+        allow.disabled = deny.disabled = true;
+        const ok = await decide(p.app, p.lens, yes, status);
+        if (ok && !$('pendingCard').contains(document.activeElement)) {
+          const nextBtn = $('pendingList').querySelector('button');
+          (nextBtn || $('connList').querySelector(`.purposes-slot[data-app="${CSS.escape(p.app)}"] input`) || $('htitle')).focus?.();
+        }
+      };
+      allow.onclick = () => act(true);
+      deny.onclick = () => act(false);
+      const btns = el('div', 'pending-actions');
+      btns.append(deny, allow);
+      li.append(text, btns);
+      return li;
+    }));
+  });
+}
+
+function numNote(long = false) {
+  const n = el('span', 'num-note');
+  n.innerHTML = icon('breathing', 'sm');
+  n.append(long ? 'Shares breathing numbers (breaths per minute)' : 'Shares breathing numbers');
+  return n;
+}
+
+/** Toggles for the lenses one app may use, plus "Remove app". */
+function purposesBlock(app) {
+  const box = el('div', 'purposes');
+  const head = el('div', 'p-head');
+  head.append(el('span', 'p-title', 'Purposes it may use'));
+  const remove = el('button', 'mini danger');
+  remove.innerHTML = icon('trash', 'sm');
+  remove.append('Remove app');
+  remove.dataset.fkey = `remove:${app.id}`;
+  remove.setAttribute('aria-label', `Remove ${app.name}`);
+  const status = el('span', 'p-status');
+  status.setAttribute('role', 'status');
+  remove.onclick = async () => {
+    if (!confirm(`Remove ${app.name} from Attune?\n\nIts approvals and requests are deleted. If it connects again it can only use Emotional companion until you allow more.`)) return;
+    remove.disabled = true;
+    try {
+      const r = await api('/api/apps/remove', { app: app.id });
+      if (!r.ok) throw new Error(r.error);
+    } catch (e) { status.textContent = (e && e.message) || 'Could not remove the app. Try again.'; remove.disabled = false; return; }
+    await refreshApps(true);
+    $('connList').focus?.();
+  };
+  head.append(remove);
+  const ul = el('ul', 'lens-list');
+  for (const lens of lenses) {
+    const li = el('li');
+    const label = el('label', 'ltog');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.setAttribute('role', 'switch');
+    input.checked = app.lenses.includes(lens.id);
+    input.dataset.fkey = `lens:${app.id}:${lens.id}`;
+    const txt = el('span', 'ltxt');
+    txt.append(el('b', null, lens.name), el('small', null, lens.description));
+    if (lens.sharesNumbers) txt.append(numNote());
+    input.onchange = async () => {
+      input.disabled = true;
+      status.textContent = '';
+      await decide(app.id, lens.id, input.checked, status);
+      input.disabled = false;
+    };
+    label.append(input, txt);
+    li.append(label);
+    ul.append(li);
+  }
+  box.append(head, ul, status);
+  return box;
+}
+
+function renderApps() {
+  renderPending();
+  const others = appsData.apps.filter((a) => !a.builtin && !KNOWN_APPS[a.id]);
+  for (const slot of $('connList').querySelectorAll('.purposes-slot')) {
+    const app = appEntry(slot.dataset.app);
+    keepFocus(slot, () => {
+      if (app && !app.builtin) slot.replaceChildren(purposesBlock(app));
+      else slot.replaceChildren(el('span', 'p-default', `Until you choose, it may use ${lensName('companion')} only. ` +
+        'If it asks for another purpose, the request shows up here.'));
+    });
+  }
+  const list = $('appList');
+  $('appsSec').hidden = !others.length;
+  keepFocus(list, () => {
+    list.replaceChildren(...others.map((app) => {
+      const row = el('div', 'conn-row on');
+      const avatar = el('div', 'cava');
+      avatar.innerHTML = icon('bot');
+      const meta = el('div', 'cmeta');
+      meta.append(el('b', null, app.name), purposesBlock(app));
+      row.append(avatar, meta);
+      return row;
+    }));
+  });
+}
+
+/** "just now", "5 min ago", "3 h ago", then a date. */
+function relTime(at) {
+  const t = Date.parse(at);
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 45) return 'just now';
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /* ---------- Parallel signal agents ---------- */
@@ -485,4 +701,7 @@ scrollArea(document.querySelector('#consentDlg .dlg'));
 scrollArea($('dayDetail'));
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
+loadLenses().then(() => refreshApps(true));
+// Requests made by an AI show up (badge + card) without a reload.
+setInterval(() => refreshApps(), 4000);
 addMsg("Hi — I'm here with you. If you turn on sensing (and choose to share it with me), I'll pay attention to how you're doing, not just what you say.", 'bot');
