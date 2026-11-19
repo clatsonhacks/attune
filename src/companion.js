@@ -60,7 +60,7 @@ function mockReply({ message, ctx }) {
 
 /* ---------------- real (Groq) ---------------- */
 function bodyNote(ctx) {
-  if (!ctx || ['off', 'stale', 'not_authorized', 'consent_required', 'starting'].includes(ctx.state)) return null;
+  if (!ctx || ['off', 'stale', 'not_authorized', 'consent_required', 'starting', 'purpose_not_approved', 'unknown_purpose', 'unavailable'].includes(ctx.state)) return null;
   if (ctx.state === 'unclear' || ctx.state === 'calibrating') return 'Body signal: unclear right now. Say nothing about the body.';
   let s = `Body signal (may be wrong): ${ctx.state}.`;
   if (ctx.say && ctx.directive) s += ` Guidance: ${ctx.directive}`;

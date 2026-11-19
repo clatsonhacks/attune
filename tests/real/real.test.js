@@ -49,6 +49,7 @@ test('body context goes in a per-turn system note only when shared; the main pro
   assert.match(last.content, /elevated/);
   assert.ok(!/\d/.test(last.content));
   assert.strictEqual(bodyNote({ state: 'off' }), null);
+  for (const st of ['purpose_not_approved', 'unknown_purpose', 'unavailable']) assert.strictEqual(bodyNote({ state: st }), null);
   assert.match(bodyNote({ state: 'unclear' }), /Say nothing/);
 });
 
