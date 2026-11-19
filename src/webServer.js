@@ -86,6 +86,7 @@ function createApp({
       lastSample = sample;
       session.ingest(sample);
       bridge.update(session.getApprovedContext(), gen);
+      bridge.updateSnapshot(session.getNeutralSnapshot(), gen);
     },
     onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
     onStop: () => { lastSample = null; bridge.closeSession(); },

@@ -34,7 +34,10 @@ function createSession({ interpreter, memory, simulatedSignals = true } = {}) {
   let lastStandingState = null;
   if (memory) memory.startSession({ note: 'session start' });
 
+  let lastSample = null;
+
   function ingest(sample) {
+    lastSample = sample;
     signals.ingest(sample);
     const r = interp.ingest(sample);
     current = r;
@@ -88,7 +91,31 @@ function createSession({ interpreter, memory, simulatedSignals = true } = {}) {
 
   function getSignals() { return signals.snapshot(); }
 
-  return { ingest, getBodyContext, getApprovedContext, getSignals, recordCorrection, endSession, snapshot: interp.snapshot };
+  /**
+   * Neutral snapshot for lenses (src/lenses). INTERNAL ONLY — contains measurements; a lens decides what an
+   * app may see. Fields are null when not measured.
+   */
+  function getNeutralSnapshot() {
+    const s = lastSample || {};
+    const snap = interp.snapshot ? interp.snapshot() : {};
+    const baseline = typeof snap.baselinePulse === 'number' ? snap.baselinePulse : null;
+    const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    return {
+      state: current ? current.state : 'starting',
+      confidence: current ? current.confidence || 0 : 0,
+      pulseBpm: num(s.pulseBpm),
+      pulseDeltaBpm: baseline != null && num(s.pulseBpm) != null ? Math.round((s.pulseBpm - baseline) * 10) / 10 : null,
+      breathingRate: num(s.breathingRate),
+      breathingConfidence: num(s.breathingConfidence) || 0,
+      hrvMs: num(s.hrvMs),
+      expression: s.expression || 'unknown',
+      expressionConfidence: num(s.expressionConfidence) || 0,
+      talking: !!s.talking,
+      observedAtMs: num(s.tMs) != null ? s.tMs : Date.now(),
+    };
+  }
+
+  return { ingest, getBodyContext, getApprovedContext, getNeutralSnapshot, getSignals, recordCorrection, endSession, snapshot: interp.snapshot };
 }
 
 module.exports = { createSession };

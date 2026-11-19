@@ -18,6 +18,8 @@
  *  - Stats are counters only — no context values are recorded.
  */
 
+const { getLens } = require('./lenses');
+
 const STATES = new Set(['calibrating', 'neutral', 'elevated', 'unclear', 'starting']);
 const NO_CONTEXT = Object.freeze({ state: 'off', say: false, directive: null, suggestedUtterance: null, confidence: 0 });
 
@@ -33,6 +35,7 @@ function createContextBridge({
   let seq = 0;
   let latest = null;   // { state, say, directive, suggestedUtterance, confidence, seq, observedAtMs, expiresAtMs }
   let insight = null;  // normalized insight + { seq }
+  let snapshot = null; // neutral snapshot for lenses (internal; never returned as-is) + { expiresAtMs }
   const subs = new Map(); // fn → { cap, lastPushAt, lastKey, timer }
   const stats = { accepted: 0, deduped: 0, rejectedSession: 0, rejectedInvalid: 0, insightsAccepted: 0, insightsRejected: 0, pushes: 0, denied: 0 };
 
@@ -42,10 +45,12 @@ function createContextBridge({
     sessionGen = gen;
     latest = null;
     insight = null;
+    snapshot = null;
   }
 
   function closeSession() {
     sessionGen = null;
+    snapshot = null;
     latest = null;
     insight = null;
     for (const [fn, s] of subs) { clearTimeout(s.timer); s.timer = null; s.lastKey = 'null'; safeCall(fn, null); }
@@ -102,6 +107,31 @@ function createContextBridge({
     return out;
   }
 
+  /** Store the latest neutral snapshot (from session.getNeutralSnapshot) for lens reads. */
+  function updateSnapshot(snap, gen) {
+    if (gen !== sessionGen || sessionGen == null || !snap || typeof snap !== 'object') return false;
+    snapshot = { ...snap, expiresAtMs: now() + ttlMs };
+    return true;
+  }
+
+  /**
+   * Lens-shaped read for an app: the capability must be valid and, if it lists lenses, include this one.
+   * Returns { lens, ...lens.render(snapshot) } or a no-context object; never blocks.
+   */
+  function getLensContext(cap, lensId) {
+    const lens = getLens(lensId);
+    if (!lens) return { ...NO_CONTEXT, state: 'unknown_purpose' };
+    if (!capabilities.valid(cap)) { stats.denied++; return { ...NO_CONTEXT, state: 'not_authorized' }; }
+    const allowed = capabilities.lensesOf ? capabilities.lensesOf(cap) : null;
+    if (allowed && !allowed.includes(lens.id)) { stats.denied++; return { ...NO_CONTEXT, lens: lens.id, state: 'purpose_not_approved' }; }
+    const t = now();
+    if (!snapshot || sessionGen == null) return { ...NO_CONTEXT, lens: lens.id };
+    if (t > snapshot.expiresAtMs) return { ...NO_CONTEXT, lens: lens.id, state: 'stale' };
+    const lowConf = snapshot.confidence < minConfidence && !['unclear', 'calibrating', 'starting'].includes(snapshot.state);
+    const snap = lowConf ? { ...snapshot, state: 'unclear' } : snapshot;
+    return { lens: lens.id, ...lens.render(snap, { note: freshInsightNote(t) }) };
+  }
+
   /** What the consenting human may see in their own UI (includes the full Insight text). */
   function getHumanView() {
     const t = now();
@@ -154,7 +184,7 @@ function createContextBridge({
     for (const [fn, s] of subs) if (!capabilities.valid(s.cap)) { safeCall(fn, null); unsubscribe(fn); }
   }
 
-  return { openSession, closeSession, update, addInsight, getApprovedContext, getHumanView, subscribe, onConsentChange, stats: () => ({ ...stats }) };
+  return { openSession, closeSession, update, updateSnapshot, getLensContext, addInsight, getApprovedContext, getHumanView, subscribe, onConsentChange, stats: () => ({ ...stats }) };
 }
 
 module.exports = { createContextBridge, NO_CONTEXT };

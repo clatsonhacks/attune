@@ -61,7 +61,7 @@ function createConnectorCore({
       session = createSession({ memory: requested.memory ? memory : null, simulatedSignals: simulated });
       bridge.openSession(gen);
     },
-    onSample: (sample, gen) => { session.ingest(sample); bridge.update(session.getApprovedContext(), gen); },
+    onSample: (sample, gen) => { session.ingest(sample); bridge.update(session.getApprovedContext(), gen); bridge.updateSnapshot(session.getNeutralSnapshot(), gen); },
     onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
     onStop: () => bridge.closeSession(),
   });
