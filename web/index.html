@@ -31,7 +31,10 @@
     <!-- Content -->
     <main class="content">
       <header class="topbar">
-        <div class="htitle" id="htitle">Companion</div>
+        <div class="tleft">
+          <div class="htitle" id="htitle">Companion</div>
+          <div class="seg" id="modeSeg" role="radiogroup" aria-label="Companion mode" hidden></div>
+        </div>
         <div class="controls">
           <span id="camPill" class="pill cam-pill" hidden title="The camera is on"><span class="rec"></span>Camera on</span>
           <span id="moodPill" class="pill mood-pill" title="Colors follow the mood of the conversation"><span class="mdot"></span><span id="moodName">calm</span></span>
@@ -87,6 +90,11 @@
                   </g>
                 </svg>
               </div>
+            </div>
+            <div class="pacer" id="pacer" hidden>
+              <div class="pacer-ring" aria-hidden="true"><span class="pacer-circle" id="pacerCircle"></span><span class="pacer-word" id="pacerWord">Breathe in</span></div>
+              <p class="sr-only">Breathing pacer: breathe in for 4 seconds and out for 6 seconds, about 6 breaths a minute.</p>
+              <div class="pacer-meta"><span>Goal: 6 breaths/min</span><span id="pacerMeasured" hidden></span></div>
             </div>
             <div class="readout">
               <div class="state-word" id="state">connecting</div>

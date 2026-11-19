@@ -77,6 +77,8 @@ function switchView(v) {
   });
   document.querySelectorAll('.view').forEach((s) => (s.hidden = s.id !== 'view-' + v));
   $('htitle').textContent = TITLES[v] || '';
+  $('modeSeg').hidden = v !== 'home' || !lenses.length;
+  syncPacer();
   if (v === 'memory') loadCalendar();
   if (v === 'connectors') refreshApps(true).then(loadConnectors);
   if (v === 'activity') refreshApps().then(() => loadActivity());
@@ -279,6 +281,7 @@ async function loadConnectors() {
 /* ---------- Purposes (lenses) each app may use, and requests waiting for the person ---------- */
 // Only the person decides here; an AI can ask for a purpose (shown as a pending request) but never approve one.
 const KNOWN_APPS = { 'claude-desktop': 'Claude Desktop', chatgpt: 'ChatGPT' };
+const SHORT_LENS = { companion: 'Companion' };
 let lenses = [], appsData = { apps: [], pending: [] }, appsSig = '';
 const lensById = (id) => lenses.find((l) => l.id === id);
 const lensName = (id) => (lensById(id) || {}).name || id || 'an unknown purpose';
@@ -287,6 +290,7 @@ const appName = (id) => (appEntry(id) || {}).name || KNOWN_APPS[id] || id;
 
 async function loadLenses() {
   try { const r = await api('/api/lenses'); lenses = Array.isArray(r.lenses) ? r.lenses : []; } catch {}
+  renderModeSeg();
 }
 
 async function refreshApps(force = false) {
@@ -522,6 +526,93 @@ $('clearActivity').onclick = async () => {
   $('actEmpty').focus();
 };
 
+/* ---------- Companion mode (which lens the built-in companion reads through) ---------- */
+let lensMode = null;
+function renderModeSeg() {
+  const seg = $('modeSeg');
+  if (!lenses.length) { seg.hidden = true; return; }
+  const ids = lenses.map((l) => l.id).join(',');
+  if (seg.dataset.ids !== ids) {
+    seg.dataset.ids = ids;
+    seg.replaceChildren(...lenses.map((l) => {
+      const b = el('button', 'seg-btn', SHORT_LENS[l.id] || l.name);
+      b.type = 'button';
+      b.dataset.lens = l.id;
+      b.setAttribute('role', 'radio');
+      b.title = l.description;
+      b.onclick = () => setMode(l.id);
+      return b;
+    }));
+  }
+  seg.hidden = currentView !== 'home';
+  seg.querySelectorAll('.seg-btn').forEach((b) => {
+    const on = b.dataset.lens === (lensMode || 'companion');
+    b.setAttribute('aria-checked', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+}
+// Radio-group keyboard: arrows move and select, like native radios.
+$('modeSeg').addEventListener('keydown', (e) => {
+  const btns = [...$('modeSeg').querySelectorAll('.seg-btn')];
+  const i = btns.indexOf(document.activeElement);
+  const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  if (i < 0 || !d) return;
+  e.preventDefault();
+  const n = btns[(i + d + btns.length) % btns.length];
+  n.focus();
+  setMode(n.dataset.lens);
+});
+let modeBusy = false;
+async function setMode(id) {
+  if (id === lensMode || modeBusy) return;
+  const prev = lensMode;
+  lensMode = id; modeBusy = true;
+  renderModeSeg(); syncPacer();
+  try {
+    const r = await api('/api/mode', { lens: id });
+    if (!r.ok) throw new Error(r.error);
+    lensMode = r.lensMode;
+  } catch { lensMode = prev; }
+  modeBusy = false;
+  renderModeSeg(); syncPacer();
+}
+
+/* ---------- Breathing pacer (yoga mode): about 6 breaths/min — in 4 s, out 6 s ---------- */
+const INHALE_MS = 4000, EXHALE_MS = 6000, CYCLE_MS = INHALE_MS + EXHALE_MS;
+let pacerT0 = 0, pacerTimer = null;
+function syncPacer() {
+  const yoga = lensMode === 'yoga';
+  const on = yoga && currentView === 'home';
+  document.querySelector('.presence').classList.toggle('yoga', yoga);
+  $('pacer').hidden = !yoga;
+  if (on && !pacerTimer) {
+    pacerT0 = performance.now();
+    const c = $('pacerCircle');
+    c.classList.remove('run'); void c.offsetWidth; c.classList.add('run'); // restart the animation in step with the words
+    tickPacer();
+    pacerTimer = setInterval(tickPacer, 250);
+  } else if (!on && pacerTimer) {
+    clearInterval(pacerTimer); pacerTimer = null;
+    $('pacerCircle').classList.remove('run');
+  }
+}
+function tickPacer() {
+  const t = (performance.now() - pacerT0) % CYCLE_MS;
+  const inhale = t < INHALE_MS;
+  const left = Math.ceil(((inhale ? INHALE_MS : CYCLE_MS) - t) / 1000);
+  const word = (inhale ? 'Breathe in' : 'Breathe out') + (REDUCED_MOTION ? ` · ${left}` : '');
+  if ($('pacerWord').textContent !== word) $('pacerWord').textContent = word;
+  $('pacer').dataset.phase = inhale ? 'in' : 'out';
+}
+function renderMeasuredBreath(signals, sensingActive) {
+  const b = (signals || []).find((x) => x.id === 'breathing');
+  const v = b && /\d\/min$/.test(b.value || '') ? b.value : null;
+  const m = $('pacerMeasured');
+  const text = v ? `You: ${v}` : sensingActive ? (b && b.value === 'paused' ? 'You: paused (talking)' : 'You: measuring…') : '';
+  if (m.textContent !== text) m.textContent = text;
+  m.hidden = !text;
+}
+
 /* ---------- Parallel signal agents ---------- */
 let lastSignals = [], selectedSignal = null;
 function renderSignals(sigs) {
@@ -599,6 +690,8 @@ async function poll() {
     const active = s.sensing && s.sensing.state === 'active';
     const errored = s.sensing && s.sensing.state === 'error';
     renderCamera(s, c, active, errored);
+    if (s.lensMode && s.lensMode !== lensMode && !modeBusy) { lensMode = s.lensMode; renderModeSeg(); syncPacer(); }
+    renderMeasuredBreath(s.signals, active);
     $('insightBox').hidden = !active;
     if (s.insight) {
       if ($('insightText').textContent !== s.insight.text) $('insightText').textContent = s.insight.text;
