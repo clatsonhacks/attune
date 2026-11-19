@@ -111,7 +111,8 @@ test('AI gets no body context unless aiSharing is on, and never numbers', async 
   const chat = (await api('/api/chat', { message: 'hi' })).json;
   assert.strictEqual(chat.aiSharing, true);
   const ctx = replies[1];
-  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'say', 'state', 'suggestedUtterance']);
+  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'lens', 'say', 'state', 'suggestedUtterance']);
+  assert.strictEqual(ctx.lens, 'companion'); // read through the built-in companion's lens
   assert.ok(!JSON.stringify(ctx).includes('72'));
 });
 

@@ -11,6 +11,9 @@
  *    acknowledged) in the UI, and stops on revoke.
  *  - Binds to 127.0.0.1 only; every /api call needs the per-boot session token (src/privacy/localGuard.js).
  *  - The AI (companion) receives approved, number-free context only when the `aiSharing` scope is on.
+ *  - Lenses: the built-in companion reads through the lens the person picked (POST /api/mode, default companion).
+ *    Other apps (MCP connectors) are approved per lens here (/api/apps/*) — nothing an AI can call reaches these
+ *    routes. Who read which lens is in the number-free activity log (/api/activity).
  *
  * Run: npm run web   (PORT env optional, default 3000; settings can live in .env)
  */
@@ -30,6 +33,9 @@ const { createConsentStore } = require('./privacy/consentStore');
 const { createCapabilities } = require('./privacy/capabilities');
 const { createContextBridge } = require('./contextBridge');
 const { normalizeInsight } = require('./insights/normalizer');
+const { getLens, listLenses, DEFAULT_LENS } = require('./lenses');
+const { createAppApprovals, defaultAppsFile, isAppId } = require('./privacy/appApprovals');
+const { createActivityLog, defaultActivityFile } = require('./activity');
 
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -40,6 +46,7 @@ const VENDOR = {
   '/vendor/overlayscrollbars.js': path.join(OS_DIR, 'browser', 'overlayscrollbars.browser.es6.min.js'),
 };
 const NO_CONTEXT = { state: 'off', say: false, directive: null, suggestedUtterance: null, confidence: 0 };
+const BUILTIN_APP = 'attune'; // this web companion: the person's own UI, may use every lens, never stored
 
 function createApp({
   port = 3000,
@@ -52,6 +59,10 @@ function createApp({
   consentStore = createConsentStore(path.join(process.cwd(), demo ? '.attune-demo-consent.json' : '.attune-consent.json')),
   idleMs = Number(process.env.ATTUNE_SENSE_IDLE_MS) || 5 * 60 * 1000,
   log = (m) => process.stderr.write(`[attune] ${m}\n`),
+  // Shared with the MCP connector process: same absolute files at the repo root (env overrides for tests).
+  approvals = createAppApprovals(defaultAppsFile(demo)),
+  activity = createActivityLog(defaultActivityFile(demo)),
+  registerClaude = registerClaudeDesktop, // test hook
 } = {}) {
   companion = companion || createCompanion({ demo, log });
   const replyFn = reply || companion.reply;
@@ -61,6 +72,13 @@ function createApp({
   const bridge = createContextBridge({ capabilities });
   consent.onChange(() => bridge.onConsentChange());
   let companionCap = null;
+  let lensMode = DEFAULT_LENS; // the lens the built-in companion reads through (POST /api/mode)
+  // The person's own UI: a capability without a lens restriction.
+  const ensureCompanionCap = () => {
+    if (!capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
+    return companionCap;
+  };
+  function record(event) { try { activity.append({ app: BUILTIN_APP, ...event }); } catch {} }
   let chatStarted = false; // the first message of a conversation turns the camera on
   const simulated = demo;
   const adapterName = demo ? 'mock' : 'smartspectra';
@@ -131,8 +149,8 @@ function createApp({
     await wake('ai_requested');
     log(`AI asked for a body reading${reason ? ` (${reason.slice(0, 80)})` : ''}`);
     if (!wasActive || !sensingActive()) return { status: 'camera_starting', note: 'A reading will be available in about 20–30 seconds. Carry on; do not mention the body yet.' };
-    if (!capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
-    const ctx = bridge.getApprovedContext(companionCap);
+    const ctx = bridge.getLensContext(ensureCompanionCap(), lensMode);
+    record({ kind: 'context', lens: lensMode, state: ctx.state, say: !!ctx.say });
     if (['off', 'stale', 'starting', 'calibrating'].includes(ctx.state)) return { status: 'warming_up', note: 'Still calibrating. Do not mention the body yet.' };
     return { status: 'ok', ...ctx };
   }
@@ -182,7 +200,7 @@ function createApp({
     const c = consent.snapshot();
     const s = sensing.status();
     const base = {
-      mode: demo ? 'demo' : 'real', ai: companion.status(), consent: { ...c, remembered: !!consentStore.load() },
+      mode: demo ? 'demo' : 'real', lensMode, ai: companion.status(), consent: { ...c, remembered: !!consentStore.load() },
       sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated, camera: s.camera,
         paused, lastTrigger, idleInMs: idleAt ? Math.max(0, idleAt - Date.now()) : null },
     };
@@ -191,13 +209,13 @@ function createApp({
       return { ...base, ...NO_CONTEXT, state: st, pulseBpm: null, signals: [], evidence: [] };
     }
     const ctx = session.getBodyContext();
-    // Measurements are shown to the consenting human only; the AI path uses getApprovedContext().
+    // Measurements are shown to the consenting human only; the AI path uses bridge.getLensContext().
     return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), insight: bridge.getHumanView().insight };
   }
 
   async function handle(req, res) {
     const { method } = req;
-    const url = req.url.split('?')[0];
+    const [url, query = ''] = req.url.split('?');
     const isApi = url.startsWith('/api/');
     const denied = guard.check(req, { requireToken: isApi });
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
@@ -239,9 +257,8 @@ function createApp({
       if (!chatStarted) { chatStarted = true; wake('chat_started'); } // fire-and-forget: never delay the reply
       else if (sensingActive()) touchIdle();
       // Immediate cache read from the Context Bridge — never waits on the SDK or an Insight.
-      if (consent.has('aiSharing') && !capabilities.valid(companionCap)) companionCap = capabilities.issue({ scope: 'aiSharing', purpose: 'companion' });
       const share = consent.has('aiSharing') && sensingActive();
-      const ctx = share ? bridge.getApprovedContext(companionCap) : NO_CONTEXT;
+      const ctx = share ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
       const out = await replyFn({ message: String(message || '').slice(0, 4000), ctx, onBodyRequest: consent.has('aiSharing') ? bodyRequest : undefined });
       return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share, ai: companion.status() });
     }
@@ -274,12 +291,57 @@ function createApp({
       else consent.grant({ memory: true });
       return sendJSON(res, 200, { private: memory.isMuted() });
     }
+    /* ---- Lenses, app approvals and activity (the person's decisions; never reachable by an AI tool) ---- */
+    if (method === 'GET' && url === '/api/lenses') return sendJSON(res, 200, { lenses: listLenses() });
+    if (method === 'POST' && url === '/api/mode') {
+      const { lens } = await readBody(req);
+      const l = typeof lens === 'string' ? getLens(lens) : null;
+      if (!l || l.id !== lens) return sendJSON(res, 400, { error: 'unknown lens' });
+      lensMode = l.id;
+      return sendJSON(res, 200, { ok: true, lensMode });
+    }
+    if (method === 'GET' && url === '/api/apps') {
+      const builtin = { id: BUILTIN_APP, name: 'Attune', lenses: listLenses().map((l) => l.id), builtin: true };
+      const stored = approvals.list().filter((a) => a.id !== BUILTIN_APP).map(({ id, name, lenses }) => ({ id, name, lenses, builtin: false }));
+      return sendJSON(res, 200, { apps: [builtin, ...stored], pending: approvals.pending().filter((p) => p.app !== BUILTIN_APP) });
+    }
+    if (method === 'POST' && url === '/api/apps/lens') {
+      const { app, lens, allow, name } = await readBody(req);
+      if (!isAppId(app)) return sendJSON(res, 400, { error: 'invalid app' });
+      if (app === BUILTIN_APP) return sendJSON(res, 400, { error: 'Attune itself always uses the mode you pick.' });
+      const l = typeof lens === 'string' ? getLens(lens) : null;
+      if (!l || l.id !== lens) return sendJSON(res, 400, { error: 'unknown lens' });
+      if (typeof allow !== 'boolean') return sendJSON(res, 400, { error: 'allow must be true or false' });
+      if (name != null && typeof name !== 'string') return sendJSON(res, 400, { error: 'invalid name' });
+      const a = approvals.setLens(app, l.id, allow, { name });
+      log(`${allow ? 'allowed' : 'denied'} ${l.id} for ${app}`);
+      return sendJSON(res, 200, { ok: true, app: { id: a.id, name: a.name, lenses: a.lenses, builtin: false } });
+    }
+    if (method === 'POST' && url === '/api/apps/remove') {
+      const { app } = await readBody(req);
+      if (!isAppId(app)) return sendJSON(res, 400, { error: 'invalid app' });
+      if (app === BUILTIN_APP) return sendJSON(res, 400, { error: 'Attune itself cannot be removed.' });
+      approvals.remove(app);
+      return sendJSON(res, 200, { ok: true });
+    }
+    if (method === 'GET' && url === '/api/activity') {
+      const n = Number(new URLSearchParams(query).get('limit'));
+      const limit = Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 500) : 100;
+      return sendJSON(res, 200, { events: activity.recent(limit) });
+    }
+    if (method === 'POST' && url === '/api/activity/clear') { activity.clear(); return sendJSON(res, 200, { ok: true }); }
+
     if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus());
     if (method === 'POST' && url === '/api/connectors/claude') {
       if (demo) return sendJSON(res, 403, { error: 'Open Attune in real mode to register Claude Desktop.' });
       const body = await readBody(req);
       if (!body || body.approved !== true) return sendJSON(res, 400, { error: 'Approve Claude sharing before connecting.' });
-      const result = registerClaudeDesktop();
+      const result = registerClaude();
+      // The new connector identifies as claude-desktop; start it on the companion lens only.
+      if (result.ok) {
+        try { if (!approvals.hasEntry('claude-desktop')) approvals.setLens('claude-desktop', DEFAULT_LENS, true, { name: 'Claude Desktop' }); }
+        catch (e) { log(`could not save Claude Desktop approvals: ${e.message}`); }
+      }
       return sendJSON(res, result.ok ? 200 : 409, result);
     }
 
@@ -304,7 +366,7 @@ function createApp({
     await new Promise((r) => server.close(() => r()));
   }
 
-  return { server, consent, sensing, guard, bridge, capabilities, close };
+  return { server, consent, sensing, guard, bridge, capabilities, approvals, activity, close };
 }
 
 if (require.main === module) {
