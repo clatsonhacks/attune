@@ -1,7 +1,7 @@
 # attune-sense (prototype)
 
 Attune turns contactless vitals (Presage SmartSpectra) into **behavioral nudges for an AI, not numbers**, and
-ships as a **local MCP connector** that Claude or ChatGPT desktop connects to.
+ships as a **local MCP connector** for Claude Desktop, ChatGPT via Secure MCP Tunnel, and other stdio clients.
 
 > Prototype. No secrets committed; use `.env`. Roadmap: [docs/ATTUNE_IMPLEMENTATION_PLAN.md](docs/ATTUNE_IMPLEMENTATION_PLAN.md) ·
 > how data moves: [docs/DATA_FLOW.md](docs/DATA_FLOW.md) · threats: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
@@ -41,23 +41,13 @@ call and stops after 2 minutes without calls (`ATTUNE_IDLE_MS`).
 | `ai-sharing` | interpreted, number-free context returned to the AI |
 | `memory` | interpretations stored locally / `memory_*` tools |
 
-### Add it to Claude Desktop
-In `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "attune-sense": {
-      "command": "node",
-      "args": ["<abs-path>/attune/src/server.js"],
-      "env": { "ATTUNE_CONSENT": "sensing,presage-ack,ai-sharing" }
-    }
-  }
-}
-```
-The *Connectors* page in the web UI shows this snippet with the right path for your machine, and whether
-Claude Desktop already has it (read-only — Attune never edits that file). ChatGPT needs a remote connector
-with pairing and isn't supported yet. Then ask the AI to call `get_body_context` before replying — see
-`SKILL.md` for the usage contract.
+### Connect from the Attune web app
+
+- **Claude Desktop**. Open **Connectors**, select **Connect Claude**, review sharing, and choose **Register in Claude Desktop**. Fully quit and reopen Claude Desktop. Attune adds its own entry and leaves existing entries in place. Remove the Attune entry in Claude Desktop and restart it to revoke the registration.
+- **ChatGPT**. Select **Connect ChatGPT** to open ChatGPT Plugins. Follow the **Secure MCP Tunnel setup** on the Attune card to configure the included stdio command in OpenAI's tunnel client. Add a custom MCP server in ChatGPT with **Tunnel** as the connection method. Accept the permission prompts in ChatGPT. The tunnel command exposes only status and interpreted context. Sensing is off until you set ATTUNE_CHATGPT_CONSENT to sensing,presage-ack,ai-sharing in the local tunnel client's environment. Only associate the tunnel with a workspace you intend to share with. Stop the tunnel client to disconnect. [OpenAI Secure MCP Tunnel setup](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+- **Other AI clients**. Expand **Show MCP configuration JSON** and copy the generated configuration into a client that supports local stdio MCP. Merge the attune-sense entry into any existing mcpServers object.
+
+See SKILL.md for tool usage.
 
 ## Tools exposed
 `get_attune_status` · `get_body_context` · `record_correction` · `memory_get` · `memory_append` · `forget_me`
