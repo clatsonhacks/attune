@@ -1,6 +1,6 @@
 'use strict';
 /*
- * Attune MCP connector — a local stdio MCP server that Claude/ChatGPT desktop connects to.
+ * Attune MCP connector — a local stdio MCP server for desktop clients and the ChatGPT tunnel client.
  *
  * Consent is NOT an AI tool. The human grants it in the connector's own config (which an AI cannot
  * edit through these tools), e.g. in claude_desktop_config.json:
@@ -16,6 +16,14 @@
  * Tools: get_attune_status · get_body_context · record_correction · memory_get · memory_append · forget_me
  * Uses the real SmartSpectra SDK by default; ATTUNE_ADAPTER=mock (or --demo) runs on synthetic vitals.
  */
+const path = require('path');
+
+// Desktop apps and tunnel clients can launch this script from a different working directory.
+if (require.main === module) {
+  try { process.loadEnvFile(); } catch {
+    try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch {}
+  }
+}
 const { createSession } = require('./session');
 const { createMemory } = require('./memory');
 const { createAdapter, isDemo } = require('./adapter');
@@ -31,6 +39,7 @@ function createConnectorCore({
   memory = createMemory(),
   idleMs = Number(process.env.ATTUNE_IDLE_MS) || 120000,
   log = (m) => process.stderr.write(`[attune-sense] ${m}\n`),
+  consentHint = 'Set ATTUNE_CONSENT="sensing,presage-ack,ai-sharing" in the MCP client configuration.',
 } = {}) {
   const requested = parseConsentString(consentString);
   const simulated = isDemo();
@@ -76,7 +85,7 @@ function createConnectorCore({
       sensing: s.state,
       ...(s.error ? { error: s.error } : {}),
       howToEnable: canSense() && canShare() ? undefined
-        : 'Consent is set by the user, not the AI: add ATTUNE_CONSENT="sensing,presage-ack,ai-sharing" to this connector\'s env in the host config.',
+        : consentHint,
     };
   }
 
@@ -121,12 +130,16 @@ async function main() {
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
   const { z } = require('zod');
 
-  const core = createConnectorCore();
+  const chatgpt = process.argv.includes('--chatgpt');
+  const core = chatgpt ? createConnectorCore({
+    consentString: process.env.ATTUNE_CHATGPT_CONSENT === 'sensing,presage-ack,ai-sharing' ? process.env.ATTUNE_CHATGPT_CONSENT : '',
+    consentHint: 'Set ATTUNE_CHATGPT_CONSENT in the local tunnel client environment and restart the client.',
+  }) : createConnectorCore();
   const text = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
   const server = new McpServer({ name: 'attune-sense', version: '0.2.0' });
 
   server.registerTool('get_attune_status',
-    { description: 'Read-only: whether the user has allowed sensing / AI sharing / memory, and whether sensing is running.', inputSchema: {} },
+    { description: 'Read-only: whether the user has allowed sensing / AI sharing / memory, and whether sensing is running.', inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => text(core.status()));
 
   server.registerTool('get_body_context',
@@ -136,24 +149,27 @@ async function main() {
         'never measurements. If say=true let directive shape your tone (be tentative, invite correction). If state is ' +
         '"unclear", "consent_required" or "unavailable", say nothing about the body. Non-medical; not a diagnosis; not lie-detection.',
       inputSchema: {},
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async () => text(await core.getBodyContext()));
 
-  server.registerTool('record_correction',
-    { description: 'The user corrected the read (e.g. "I\'m fine"). Pass wasAccurate=false to make it more conservative.', inputSchema: { wasAccurate: z.boolean() } },
-    async ({ wasAccurate }) => text(core.recordCorrection({ wasAccurate })));
+  if (!chatgpt) {
+    server.registerTool('record_correction',
+      { description: 'The user corrected the read (e.g. "I\'m fine"). Pass wasAccurate=false to make it more conservative.', inputSchema: { wasAccurate: z.boolean() } },
+      async ({ wasAccurate }) => text(core.recordCorrection({ wasAccurate })));
 
-  server.registerTool('memory_get',
-    { description: 'Compact cross-session summary (interpretations only). Only available if the user enabled memory.', inputSchema: {} },
-    async () => text(core.memoryGet()));
+    server.registerTool('memory_get',
+      { description: 'Compact cross-session summary (interpretations only). Only available if the user enabled memory.', inputSchema: {} },
+      async () => text(core.memoryGet()));
 
-  server.registerTool('memory_append',
-    { description: 'Note what mattered this session (no raw signals). Only works if the user enabled memory.', inputSchema: { note: z.string() } },
-    async ({ note }) => text(core.memoryAppend({ note })));
+    server.registerTool('memory_append',
+      { description: 'Note what mattered this session (no raw signals). Only works if the user enabled memory.', inputSchema: { note: z.string() } },
+      async ({ note }) => text(core.memoryAppend({ note })));
 
-  server.registerTool('forget_me',
-    { description: 'Delete all local Attune memory for this user.', inputSchema: {} },
-    async () => text(core.forget()));
+    server.registerTool('forget_me',
+      { description: 'Delete all local Attune memory for this user.', inputSchema: {} },
+      async () => text(core.forget()));
+  }
 
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await core.shutdown(); process.exit(0); });
   await server.connect(new StdioServerTransport());

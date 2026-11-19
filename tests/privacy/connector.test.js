@@ -78,3 +78,26 @@ test('MCP server exposes no AI-callable consent tool', async (t) => {
   const res = await client.callTool({ name: 'get_body_context', arguments: {} });
   assert.strictEqual(JSON.parse(res.content[0].text).state, 'consent_required');
 });
+
+test('ChatGPT stdio profile exposes status and context and requires separate consent', async (t) => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
+  const mem = tempMemory();
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(__dirname, '..', '..', 'src', 'server.js'), '--chatgpt'],
+    env: { ...process.env, ATTUNE_ADAPTER: 'mock',
+      ATTUNE_CONSENT: 'sensing,presage-ack,ai-sharing,memory', ATTUNE_CHATGPT_CONSENT: '' },
+    cwd: path.dirname(mem.file),
+    stderr: 'ignore',
+  });
+  const client = new Client({ name: 'attune-chatgpt-test', version: '0.0.0' });
+  t.after(async () => { await client.close(); mem.cleanup(); });
+  await client.connect(transport);
+  const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
+  assert.deepStrictEqual(tools, ['get_attune_status', 'get_body_context']);
+  const result = await client.callTool({ name: 'get_body_context', arguments: {} });
+  const context = JSON.parse(result.content[0].text);
+  assert.strictEqual(context.state, 'consent_required');
+  assert.match(context.howToEnable, /ATTUNE_CHATGPT_CONSENT/);
+});
