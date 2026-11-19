@@ -20,6 +20,7 @@ const ICONS = {
   pause: 'pause', undo: 'undo-2', link: 'link', unlink: 'unlink', lock: 'lock', pulse: 'heart-pulse',
   face: 'smile', breathing: 'wind', hrv: 'activity', bot: 'bot', cpu: 'cpu', sparkles: 'sparkles',
   copy: 'copy', refresh: 'rotate-ccw', history: 'history', check: 'check', close: 'x', bell: 'bell-ring',
+  'lens-companion': 'heart-handshake', 'lens-yoga': 'flower-2', 'lens-casual': 'laugh',
 };
 const BRANDS = { claude: 'claude' }; // sprite id → Simple Icons slug
 
