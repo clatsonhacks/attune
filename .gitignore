@@ -7,3 +7,7 @@ node_modules/
 .attune-demo-memory.json
 .attune-consent.json
 .attune-demo-consent.json
+.attune-apps.json
+.attune-demo-apps.json
+.attune-activity.jsonl
+.attune-demo-activity.jsonl
