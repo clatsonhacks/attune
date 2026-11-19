@@ -11,9 +11,10 @@ const os = require('os');
 const path = require('path');
 const { createMemory } = require('../src/memory');
 
-// Safety net: anything that falls back to the default approvals/activity files (including spawned connector
-// processes, which inherit process.env) writes to a per-run temp dir, never the repo-root files.
+// Safety net: anything that falls back to a default store file (including spawned processes, which inherit
+// process.env) writes to a per-run temp data folder, never the real per-user folder or the repo root.
 const SHARED_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-shared-'));
+process.env.ATTUNE_DATA_DIR = path.join(SHARED_DIR, 'data');
 process.env.ATTUNE_APPS_FILE = path.join(SHARED_DIR, 'apps.json');
 process.env.ATTUNE_ACTIVITY_FILE = path.join(SHARED_DIR, 'activity.jsonl');
 process.on('exit', () => { try { fs.rmSync(SHARED_DIR, { recursive: true, force: true }); } catch {} });

@@ -101,10 +101,10 @@ test('pending requests are de-duplicated, capped and cleared by a decision', (t)
   assert.ok(!store.pending().some((x) => x.app === 'app-10'));
 });
 
-test('default file is absolute at the repo root; env override; client names become safe ids', () => {
-  const root = path.join(__dirname, '..', '..');
-  assert.strictEqual(defaultAppsFile(false, {}), path.join(root, '.attune-apps.json'));
-  assert.strictEqual(defaultAppsFile(true, {}), path.join(root, '.attune-demo-apps.json'));
+test('default file is in the data folder; env override; client names become safe ids', () => {
+  const dir = process.env.ATTUNE_DATA_DIR;
+  assert.strictEqual(defaultAppsFile(false, { ATTUNE_DATA_DIR: dir }), path.join(dir, 'apps.json'));
+  assert.strictEqual(defaultAppsFile(true, { ATTUNE_DATA_DIR: dir }), path.join(dir, 'demo', 'apps.json'));
   assert.ok(path.isAbsolute(defaultAppsFile(false, { ATTUNE_APPS_FILE: 'x.json' })));
   assert.strictEqual(slugAppId('Claude Desktop'), 'claude-desktop');
   assert.strictEqual(slugAppId('  --My_App 2!! '), 'my-app-2');

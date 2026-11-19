@@ -69,9 +69,9 @@ test('two writers append to the same file', (t) => {
   assert.deepStrictEqual(log.recent().map((e) => e.app), ['chatgpt', 'attune']);
 });
 
-test('default file is absolute at the repo root, with an env override', () => {
-  const root = path.join(__dirname, '..', '..');
-  assert.strictEqual(defaultActivityFile(false, {}), path.join(root, '.attune-activity.jsonl'));
-  assert.strictEqual(defaultActivityFile(true, {}), path.join(root, '.attune-demo-activity.jsonl'));
+test('default file is in the data folder, with an env override', () => {
+  const dir = process.env.ATTUNE_DATA_DIR;
+  assert.strictEqual(defaultActivityFile(false, { ATTUNE_DATA_DIR: dir }), path.join(dir, 'activity.jsonl'));
+  assert.strictEqual(defaultActivityFile(true, { ATTUNE_DATA_DIR: dir }), path.join(dir, 'demo', 'activity.jsonl'));
   assert.ok(path.isAbsolute(defaultActivityFile(false, { ATTUNE_ACTIVITY_FILE: 'a.jsonl' })));
 });

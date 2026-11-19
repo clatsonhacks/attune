@@ -22,14 +22,14 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createSession } = require('./session');
-const { createMemory } = require('./memory');
+const { createMemory, defaultMemoryFile } = require('./memory');
 const { createAdapter, isDemo } = require('./adapter');
 const { createCompanion } = require('./companion');
 const { connectorsStatus, registerClaudeDesktop } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
 const { createSensing } = require('./sensing');
-const { createConsentStore } = require('./privacy/consentStore');
+const { createConsentStore, defaultConsentFile } = require('./privacy/consentStore');
 const { createCapabilities } = require('./privacy/capabilities');
 const { createContextBridge } = require('./contextBridge');
 const { normalizeInsight } = require('./insights/normalizer');
@@ -52,14 +52,13 @@ function createApp({
   port = 3000,
   adapterFactory = () => createAdapter({ intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250 }),
   demo = isDemo(),
-  // Demo and real keep separate memory files so synthetic history never mixes with yours.
-  memory = createMemory(path.join(process.cwd(), demo ? '.attune-demo-memory.json' : '.attune-memory.json')),
+  // Everything lives in the per-user data folder (src/paths.js); demo mode uses its own subfolder.
+  memory = createMemory(defaultMemoryFile(demo)),
   companion = null,
   reply = null, // test hook: replace the companion's reply function
-  consentStore = createConsentStore(path.join(process.cwd(), demo ? '.attune-demo-consent.json' : '.attune-consent.json')),
+  consentStore = createConsentStore(defaultConsentFile(demo)),
   idleMs = Number(process.env.ATTUNE_SENSE_IDLE_MS) || 5 * 60 * 1000,
   log = (m) => process.stderr.write(`[attune] ${m}\n`),
-  // Shared with the MCP connector process: same absolute files at the repo root (env overrides for tests).
   approvals = createAppApprovals(defaultAppsFile(demo)),
   activity = createActivityLog(defaultActivityFile(demo)),
   registerClaude = registerClaudeDesktop, // test hook

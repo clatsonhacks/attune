@@ -6,8 +6,12 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { storeFile } = require('./paths');
 
-function createMemory(filePath = path.join(process.cwd(), '.attune-memory.json')) {
+/** Memory file in the per-user data folder (demo mode keeps its own). */
+const defaultMemoryFile = (demo = false, env = process.env) => storeFile('memory', { demo, env });
+
+function createMemory(filePath = defaultMemoryFile()) {
   function _loadRaw() {
     try {
       return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -20,7 +24,8 @@ function createMemory(filePath = path.join(process.cwd(), '.attune-memory.json')
 
   function _persist() {
     try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 });
     } catch (e) {
       // Non-fatal in the prototype; never crash the connector over a memory write.
       process.stderr.write(`[attune/memory] write failed: ${e.message}\n`);
@@ -105,4 +110,4 @@ function createMemory(filePath = path.join(process.cwd(), '.attune-memory.json')
   };
 }
 
-module.exports = { createMemory };
+module.exports = { createMemory, defaultMemoryFile };

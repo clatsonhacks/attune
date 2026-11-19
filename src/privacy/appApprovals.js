@@ -4,9 +4,8 @@
  * (src/webServer.js → /api/apps/*). An AI can SUGGEST a purpose (the connector records it as a pending
  * request) but nothing an AI can call reaches setLens()/remove().
  *
- * The MCP connector runs in a different process (launched by Claude Desktop or a tunnel client from another
- * working directory) than the web server, so both use the same absolute file at the repo root and every
- * check re-reads it: approvals changed in the UI apply to the next request without a restart.
+ * The file lives in the per-user data folder (src/paths.js → apps.json). Every check re-reads it, so approvals
+ * changed in the UI apply to the next request without a restart.
  *
  * File: { version: 1, apps: { [appId]: { name, lenses: [ids], createdAt, updatedAt } }, pending: [{ app, lens, at }] }
  * Writes are atomic (temp file + rename).
@@ -18,18 +17,18 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { getLens, DEFAULT_LENS } = require('../lenses');
+const { storeFile } = require('../paths');
 
 const VERSION = 1;
 const APP_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_PENDING = 20;
-const ROOT = path.join(__dirname, '..', '..');
 
 const isAppId = (id) => typeof id === 'string' && APP_ID.test(id);
 
-/** Absolute approvals file shared by the web server and the connector (ATTUNE_APPS_FILE overrides). */
+/** Approvals file in the per-user data folder (ATTUNE_APPS_FILE overrides). */
 function defaultAppsFile(demo, env = process.env) {
   if (env.ATTUNE_APPS_FILE) return path.resolve(env.ATTUNE_APPS_FILE);
-  return path.join(ROOT, demo ? '.attune-demo-apps.json' : '.attune-apps.json');
+  return storeFile('apps', { demo, env });
 }
 
 /** Turn an MCP client name ("Claude Desktop", "openai-mcp") into a valid app id, or null. */

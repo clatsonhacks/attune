@@ -1,7 +1,7 @@
 'use strict';
 /*
  * Activity log: which app read which lens, and when — so the person can see who used Attune.
- * JSON Lines, appended (the connector and the web server are separate processes and may both append).
+ * JSON Lines, appended (several writers may append to the same file).
  *
  * Stores ONLY { at, app, lens, kind, state, say }. Never directive text, notes, numbers or measurements:
  * fields are whitelisted and coerced, everything else an event carries is dropped.
@@ -12,12 +12,12 @@ const path = require('path');
 const KINDS = new Set(['context', 'denied', 'request', 'unknown']);
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const STATE = /^[a-z_]{1,32}$/;
-const ROOT = path.join(__dirname, '..');
+const { storeFile } = require('./paths');
 
-/** Absolute activity file shared by the web server and the connector (ATTUNE_ACTIVITY_FILE overrides). */
+/** Activity file in the per-user data folder (ATTUNE_ACTIVITY_FILE overrides). */
 function defaultActivityFile(demo, env = process.env) {
   if (env.ATTUNE_ACTIVITY_FILE) return path.resolve(env.ATTUNE_ACTIVITY_FILE);
-  return path.join(ROOT, demo ? '.attune-demo-activity.jsonl' : '.attune-activity.jsonl');
+  return storeFile('activity', { demo, env });
 }
 
 /** Whitelist + coerce. Returns null for anything that is not a valid event. */
