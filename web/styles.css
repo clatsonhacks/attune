@@ -202,11 +202,16 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .conn-head span { color:var(--muted); font-size:15px; }
 .conn-row { display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:14px; background:rgba(255,255,255,.4); border:1px solid var(--glass-brd); margin-bottom:9px; }
 .conn-row .cava { width:38px; height:38px; flex:none; border-radius:10px; background:color-mix(in srgb,var(--accent) 18%,white); display:grid; place-items:center; font-weight:700; color:var(--accent); font-family:var(--font-head); }
-.conn-row .cmeta { flex:1; } .conn-row .cmeta b { font-size:17px; } .conn-row .cmeta span { display:block; color:var(--muted); font-size:14px; }
+.conn-row .cmeta { flex:1; min-width:0; } .conn-row .cmeta b { font-size:17px; } .conn-row .cmeta span { display:block; color:var(--muted); font-size:14px; }
 .conn-row .cstatus { font-size:13px; color:var(--muted); }
 .conn-row.on .cstatus { color:var(--ok); }
 .conn-row .cbtn { gap:6px; min-width:132px; font-size:14.5px; padding:6px 14px; border-radius:999px; border:1px solid var(--glass-brd); cursor:pointer; background:rgba(255,255,255,.55); color:var(--ink); }
 .conn-row.on .cbtn { background:color-mix(in srgb,var(--accent) 14%,white); }
+.conn-row .cbtn { display:inline-block; width:fit-content; margin-top:8px; text-decoration:none; }
+.conn-setup { margin-top:8px; }
+.conn-setup summary { cursor:pointer; width:fit-content; }
+.conn-setup > span, .conn-setup .opt { margin:8px 0; }
+.conn-setup .mini:disabled { cursor:default; opacity:.55; }
 
 /* ===== Muse mascot (replaces the orb) ===== */
 .mascot { position:relative; display:grid; place-items:center; }

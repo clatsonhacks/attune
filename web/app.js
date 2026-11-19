@@ -121,42 +121,137 @@ $('calPrev').onclick = () => { if (--calView.m < 0) { calView.m = 11; calView.y-
 $('calNext').onclick = () => { if (++calView.m > 11) { calView.m = 0; calView.y++; } renderCalendar(); };
 $('forgetAll').onclick = async () => { await api('/api/forget'); selDay = null; await loadCalendar(); $('dayDetail').innerHTML = '<div class="dd-empty">All memory cleared.</div>'; };
 
-/* ---------- Connectors (real status, read-only) ---------- */
+/* ---------- Connectors ---------- */
 const CONN_ICONS = { 'claude-desktop': 'claude', chatgpt: 'bot' };
-const CONN_TEXT = {
-  registered: 'Registered', not_registered: 'Not set up', no_config: 'Claude Desktop config not found',
-  unreadable: 'Config file could not be read', not_supported: 'Not available yet',
-};
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
-async function loadConnectors() {
-  const r = await api('/api/connectors');
-  const list = $('connList');
-  list.replaceChildren();
-  for (const c of r.connectors) {
-    const row = el('div', `conn-row ${c.registered ? 'on' : ''}`);
-    const ava = el('div', 'cava'); ava.innerHTML = icon(CONN_ICONS[c.id] || 'connectors');
-    const meta = el('div', 'cmeta');
-    meta.append(el('b', null, c.name));
-    let detail = c.note || '';
-    if (c.id === 'claude-desktop') {
-      if (c.registered) {
-        const cs = c.consent || {};
-        detail = `Consent in your config: sensing ${cs.sensing ? 'on' : 'off'} · AI sharing ${cs.aiSharing ? 'on' : 'off'} · memory ${cs.memory ? 'on' : 'off'}` +
-          (c.pointsToThisInstall ? '' : ' · points to a different copy of Attune');
-      } else {
-        detail = `Add this to ${c.configPath}, then restart Claude Desktop:`;
+
+function connectorLink(label, href) {
+  const link = el('a', 'cbtn', label);
+  link.href = href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  return link;
+}
+
+function copyConnectorText(text, label) {
+  const button = el('button', 'mini', label);
+  const feedback = el('span');
+  feedback.setAttribute('role', 'status');
+  button.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      feedback.textContent = 'Copied.';
+    } catch {
+      feedback.textContent = 'Select the text and copy it manually.';
+    }
+  };
+  const pre = el('pre', 'snippet', text);
+  pre.tabIndex = 0;
+  const block = el('div');
+  block.append(pre, button, feedback);
+  return block;
+}
+
+function renderClaudeSetup(meta, connector) {
+  if (connector.registered) {
+    const consent = connector.consent;
+    meta.append(el('span', null, connector.pointsToThisInstall
+      ? 'Registered in Claude Desktop. Camera sensing ' + (consent.sensing ? 'on' : 'off') +
+        ', AI sharing ' + (consent.aiSharing ? 'on' : 'off') + ', memory ' + (consent.memory ? 'on.' : 'off.')
+      : 'Claude Desktop already has an Attune entry for another installation. Review it in Claude Desktop.'));
+    return;
+  }
+  if (connector.status === 'unreadable') {
+    meta.append(el('span', null, 'Claude Desktop settings could not be read. Check them and reopen this page.'));
+    return;
+  }
+  const connect = el('button', 'cbtn', 'Connect Claude');
+  const panel = el('div', 'conn-setup');
+  panel.hidden = true;
+  connect.setAttribute('aria-expanded', 'false');
+  connect.setAttribute('aria-controls', 'claudeSetup');
+  panel.id = 'claudeSetup';
+  connect.onclick = () => {
+    panel.hidden = !panel.hidden;
+    connect.setAttribute('aria-expanded', String(!panel.hidden));
+  };
+
+  const label = el('label', 'opt');
+  const checkbox = el('input');
+  checkbox.type = 'checkbox';
+  label.append(checkbox, el('span', null, 'Allow Claude to request camera sensing and receive interpreted context. ' +
+    'Presage SmartSpectra sends physiological measurements to Presage for Insights.'));
+  const add = el('button', 'mini', 'Register in Claude Desktop');
+  add.disabled = true;
+  checkbox.onchange = () => { add.disabled = !checkbox.checked; };
+  const feedback = el('span');
+  feedback.setAttribute('role', 'status');
+  add.onclick = async () => {
+    add.disabled = checkbox.disabled = true;
+    try {
+      const result = await api('/api/connectors/claude', { approved: checkbox.checked });
+      if (result.ok) {
+        feedback.textContent = 'Registered. Fully quit and reopen Claude Desktop to load Attune.';
+        feedback.tabIndex = -1;
+        feedback.focus();
+        label.remove();
+        add.remove();
+        return;
       }
+      feedback.textContent = result.error || 'Claude Desktop setup failed. Try again.';
+    } catch {
+      feedback.textContent = 'Claude Desktop setup failed. Try again.';
     }
-    meta.append(el('span', null, detail));
-    if (c.id === 'claude-desktop' && !c.registered) {
-      const pre = el('pre', 'snippet', c.snippet);
-      requestAnimationFrame(() => scrollArea(pre, null, { overflow: { y: 'hidden' }, scrollbars: SCROLL_OPTS.scrollbars }));
-      const copy = el('button', 'mini', 'Copy');
-      copy.onclick = async () => { try { await navigator.clipboard.writeText(c.snippet); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select and copy manually'; } };
-      meta.append(pre, copy);
+    checkbox.disabled = false;
+    add.disabled = !checkbox.checked;
+  };
+
+  panel.append(el('span', null, 'Attune adds an entry to Claude Desktop settings. You can remove it from Claude Desktop to revoke access.'),
+    connectorLink('Presage privacy policy', 'https://api.physiology.presagetech.com/privacypolicy'), label, add, feedback);
+  meta.append(connect, panel);
+}
+
+function renderChatGPTSetup(meta, connector) {
+  const setup = el('details', 'conn-setup');
+  setup.append(el('summary', null, 'Secure MCP Tunnel setup'),
+    el('span', null, 'Create a tunnel for your ChatGPT workspace and use the command below as the local stdio MCP server. ' +
+      'Then select the tunnel in ChatGPT under Add custom MCP server.'),
+    connectorLink('OpenAI tunnel setup guide', 'https://developers.openai.com/api/docs/guides/secure-mcp-tunnels'),
+    copyConnectorText(connector.command, 'Copy server command'),
+    el('span', null, 'To allow sensing and sharing, set ATTUNE_CHATGPT_CONSENT=sensing,presage-ack,ai-sharing in the local tunnel client environment. ' +
+      'ChatGPT can then request readings, which can turn on the camera. It receives interpreted context. ' +
+      'Presage receives physiological measurements for Insights. Stop the tunnel client to disconnect.'));
+  const connect = connectorLink('Connect ChatGPT', 'https://chatgpt.com/plugins');
+  connect.addEventListener('click', () => { setup.open = true; });
+  meta.append(connect, setup);
+}
+
+async function loadConnectors() {
+  const list = $('connList');
+  try {
+    const result = await api('/api/connectors');
+    list.replaceChildren();
+    for (const connector of result.connectors) {
+      const row = el('div', connector.registered ? 'conn-row on' : 'conn-row');
+      const avatar = el('div', 'cava');
+      avatar.innerHTML = icon(CONN_ICONS[connector.id] || 'connectors');
+      const meta = el('div', 'cmeta');
+      meta.append(el('b', null, connector.name));
+      if (connector.id === 'claude-desktop') renderClaudeSetup(meta, connector);
+      if (connector.id === 'chatgpt') renderChatGPTSetup(meta, connector);
+      if (connector.id === 'other') {
+        const setup = el('details', 'conn-setup');
+        setup.append(el('summary', null, 'Show MCP configuration JSON'),
+          el('span', null, 'For clients that support local stdio MCP. The example allows camera sensing and interpreted AI sharing. ' +
+            'Presage receives physiological measurements for Insights. Remove ATTUNE_CONSENT to keep sensing and sharing off.'),
+          copyConnectorText(connector.snippet, 'Copy JSON'));
+        meta.append(setup);
+      }
+      row.append(avatar, meta);
+      list.append(row);
     }
-    row.append(ava, meta, el('span', 'cstatus', CONN_TEXT[c.status] || c.status));
-    list.append(row);
+  } catch {
+    list.replaceChildren(el('p', null, 'Could not load connectors. Reopen this page to try again.'));
   }
 }
 
