@@ -31,6 +31,17 @@ It turns off after `ATTUNE_SENSE_IDLE_MS` (default 5 min) without chat activity,
 If breathing can't be measured because the chest isn't in view for 20 s, it continues with face-only metrics
 (no breathing, HRV or Presage check-ins); `ATTUNE_METRICS=face` starts that way.
 
+## Connecting other AI apps
+- **Claude Desktop:** after the person ticks an approval box on the Connectors page, Attune adds one `attune-sense`
+  entry to `claude_desktop_config.json` (atomic write; existing entries untouched; refuses if an Attune entry already
+  exists or the file can't be read). The entry carries `ATTUNE_CONSENT=sensing,presage-ack,ai-sharing`. Removing
+  the entry in Claude Desktop revokes it.
+- **ChatGPT (tunnel profile, `server.js --chatgpt`):** only status and interpreted context are exposed; sensing stays
+  off unless `ATTUNE_CHATGPT_CONSENT` is set in the local tunnel client. Context then travels through OpenAI's tunnel
+  to the ChatGPT workspace the tunnel is associated with.
+- **Lenses (in progress):** each app reads context through a purpose-specific lens it was approved for; see
+  `src/lenses/`.
+
 ## Never sent to the AI
 Pulse BPM, evidence strings (e.g. "pulse +14 over baseline"), raw metrics, video. Memory notes are stored
 number-free ("pulse above baseline").

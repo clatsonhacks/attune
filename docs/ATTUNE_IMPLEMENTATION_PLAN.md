@@ -253,6 +253,20 @@ Do a legal/privacy review before releasing final language.
 
 ---
 
+### M8 — Lenses: one sensing core, many purposes (P1, started 19 Nov 2026)
+
+**Goal:** any AI app can use Attune; a lens matched to its task decides what it may see, and the person approves
+each app for each purpose.
+
+- [x] `M8-01` Lens registry + companion lens (identical output to before) + neutral snapshot + lens-aware bridge reads.
+- [ ] `M8-02` Yoga/breathwork lens (may share breathing rate and target pace only) and casual-chat lens.
+- [ ] `M8-03` Per-app lens approvals stored locally; connector `get_body_context({ purpose })`, `list_purposes`;
+  unapproved purposes are recorded as requests, never auto-approved.
+- [ ] `M8-04` Local activity log (which app read which lens, when — no directives or numbers).
+- [ ] `M8-05` UI: approve purposes per app, pending requests, activity page, built-in companion mode switch.
+- [ ] `M8-06` Later: gaming lens with anti-engagement rules (breaks/difficulty only, never monetisation);
+  exercise lens for recovery between sets only (webcam signal fails during motion).
+
 ## 6. Recommended implementation order and release gates
 
 | Order | Milestone | Priority | Release gate |
