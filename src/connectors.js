@@ -17,8 +17,9 @@ function claudeDesktopConfigPath(platform = process.platform, env = process.env,
   return path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'Claude', 'claude_desktop_config.json');
 }
 
-function connectorEntry(command = 'node') {
-  return { command, args: [SERVER_JS], env: { ATTUNE_CONSENT: DEFAULT_CONSENT } };
+// appId pins the identity the connector uses for lens approvals (src/privacy/appApprovals.js).
+function connectorEntry(command = 'node', appId) {
+  return { command, args: [SERVER_JS], env: { ATTUNE_CONSENT: DEFAULT_CONSENT, ...(appId ? { ATTUNE_APP_ID: appId } : {}) } };
 }
 
 function snippet() {
@@ -54,7 +55,7 @@ function registerClaudeDesktop(configPath = claudeDesktopConfigPath()) {
   const { raw, config } = current;
   if (findAttune(config.mcpServers)) return { error: 'Claude Desktop already has an Attune entry. Review it in Claude Desktop.' };
 
-  config.mcpServers = { ...config.mcpServers, 'attune-sense': connectorEntry(process.execPath) };
+  config.mcpServers = { ...config.mcpServers, 'attune-sense': connectorEntry(process.execPath, 'claude-desktop') };
   const tempPath = path.join(path.dirname(configPath), '.attune-' + randomUUID() + '.tmp');
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
