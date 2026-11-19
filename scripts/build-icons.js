@@ -19,7 +19,7 @@ const ICONS = {
   prev: 'chevron-left', next: 'chevron-right', down: 'arrow-down', trash: 'trash-2', consent: 'shield-check',
   pause: 'pause', undo: 'undo-2', link: 'link', unlink: 'unlink', lock: 'lock', pulse: 'heart-pulse',
   face: 'smile', breathing: 'wind', hrv: 'activity', bot: 'bot', cpu: 'cpu', sparkles: 'sparkles',
-  copy: 'copy', refresh: 'rotate-ccw',
+  copy: 'copy', refresh: 'rotate-ccw', history: 'history', check: 'check', close: 'x', bell: 'bell-ring',
 };
 const BRANDS = { claude: 'claude' }; // sprite id → Simple Icons slug
 
