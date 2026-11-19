@@ -7,20 +7,10 @@
  */
 const { createInterpreter } = require('./interpreter');
 const { createSignals } = require('./signals');
+const { getLens } = require('./lenses');
 
-const STANDING = {
-  elevated: {
-    say: true,
-    directive:
-      'De-escalate: slow your pace, lower your energy, acknowledge the feeling before advising. ' +
-      'Check in TENTATIVELY and invite correction. Never state numbers.',
-    suggestedUtterance:
-      "I might be reading this wrong, but you seem a bit tense — want to slow down for a second?",
-  },
-  neutral: { say: false, directive: null, suggestedUtterance: null },
-  calibrating: { say: false, directive: null, suggestedUtterance: null },
-  unclear: { say: false, directive: null, suggestedUtterance: null },
-};
+// Guidance wording lives in the companion lens; the session only supplies the neutral snapshot.
+const companion = () => getLens('companion');
 
 // Memory stores interpretations, never measurements: "pulse +14 over baseline" → "pulse above baseline".
 function numberFree(evidence = []) {
@@ -50,7 +40,7 @@ function createSession({ interpreter, memory, simulatedSignals = true } = {}) {
 
   function getBodyContext() {
     const state = current ? current.state : 'starting';
-    const base = STANDING[state] || { say: false, directive: null, suggestedUtterance: null };
+    const base = companion().render({ state });
     lastStandingState = state;
     return {
       state,
@@ -68,14 +58,9 @@ function createSession({ interpreter, memory, simulatedSignals = true } = {}) {
    * aiSharing consent scope before handing this to a model.
    */
   function getApprovedContext() {
-    const c = getBodyContext();
-    return {
-      state: c.state,
-      say: c.say,
-      directive: c.directive,
-      suggestedUtterance: c.suggestedUtterance,
-      confidence: Math.round(c.confidence * 100) / 100,
-    };
+    lastStandingState = current ? current.state : 'starting';
+    const { state, say, directive, suggestedUtterance, confidence } = companion().render(getNeutralSnapshot());
+    return { state, say, directive, suggestedUtterance, confidence };
   }
 
   function recordCorrection({ wasAccurate } = {}) {
