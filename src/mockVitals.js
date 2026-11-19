@@ -7,10 +7,24 @@
  *   30-50s  stress: pulse climbs 72 -> ~92 and holds, expression tense, speech fast
  *   50-62s  low confidence (user moves / poor light) -> degraded "unclear"
  *   62-85s  recovery: pulse back ~74, neutral
+ * Simulated breathing (demo only, deterministic so the pulse jitter sequence is untouched): ~14/min while
+ * calm, ~19/min under stress, easing from ~19 back to ~14 during recovery; null (confidence 0) while talking,
+ * because breathing cannot be read during speech.
  */
 
 function jitter(n, amt) {
   return n + (Math.random() * 2 - 1) * amt;
+}
+
+function breathingAt(t) {
+  if (t < 30) return 14;
+  if (t < 62) return 19;
+  return Math.round((19 - Math.min(1, (t - 62) / 15) * 5) * 10) / 10; // ease 19 -> 14 over ~15s
+}
+
+function withBreathing(sample, t) {
+  if (sample.talking) return { ...sample, breathingRate: null, breathingConfidence: 0 };
+  return { ...sample, breathingRate: breathingAt(t), breathingConfidence: t < 62 ? 0.85 : 0.8 };
 }
 
 function* mockStream() {
@@ -31,7 +45,7 @@ function* mockStream() {
     } else {
       sample = { tMs, pulseBpm: jitter(74, 1), pulseConfidence: 0.91, expression: 'neutral', expressionConfidence: 0.9, talking: false };
     }
-    yield sample;
+    yield withBreathing(sample, t);
   }
 }
 
