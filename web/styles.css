@@ -395,37 +395,25 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .seg[hidden] { display:none; }
 .seg-btn { border:0; background:transparent; color:var(--muted); font-size:13.5px; font-weight:500; padding:5px 12px; border-radius:999px; cursor:pointer; white-space:nowrap; transition:background .2s, color .2s; }
 .seg-btn:hover { color:var(--ink); }
+.mode-icons { margin-left:auto; }
+.mode-icons .seg-btn { width:36px; height:30px; padding:0; display:grid; place-items:center; }
+.mode-icons .seg-btn .ic { width:18px; height:18px; }
+.conv-head .ai-status { margin-left:0; }
 .seg-btn[aria-checked="true"] { background:var(--accent); color:#fff; font-weight:600; box-shadow:0 6px 14px -8px color-mix(in srgb,var(--accent) 80%,transparent); }
 @media (max-width:1100px){ .seg-btn { padding:5px 9px; font-size:12.5px; } .tleft { gap:10px; } }
 
-/* ===== Breathing pacer (yoga mode) ===== */
-.presence.yoga .orb-wrap { display:none; }
-.pacer { flex:none; width:100%; display:flex; flex-direction:column; align-items:center; margin-top:2px; }
-.pacer[hidden] { display:none; }
-.pacer-ring { position:relative; width:clamp(118px, 21vh, 196px); height:clamp(118px, 21vh, 196px); display:grid; place-items:center; border-radius:50%;
-  border:2px dashed color-mix(in srgb,var(--accent) 30%,transparent); }
-.pacer-circle { position:absolute; inset:8%; border-radius:50%; transform:scale(.55);
-  background:radial-gradient(circle at 38% 34%, rgba(255,255,255,.9), color-mix(in srgb,var(--accent2) 80%,white) 45%, var(--accent));
-  box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 10%,transparent), 0 18px 36px -16px color-mix(in srgb,var(--accent) 80%,transparent); }
-.pacer-circle.run { animation:pace 10s linear infinite; }
-@keyframes pace {
-  0%   { transform:scale(.55); animation-timing-function:ease-in-out; }
-  40%  { transform:scale(1);   animation-timing-function:ease-in-out; }
-  100% { transform:scale(.55); }
-}
-.pacer-word { position:relative; z-index:1; font-family:var(--font-head); font-size:19px; font-weight:600; color:var(--ink);
-  padding:2px 10px; border-radius:999px; background:rgba(255,255,255,.55); }
-.pacer-meta { display:flex; gap:6px; flex-wrap:nowrap; white-space:nowrap; justify-content:center; margin-top:8px; font-size:13.5px; color:var(--muted); }
-.pacer-meta span { padding:2px 9px; border-radius:999px; border:1px solid var(--glass-brd); background:rgba(255,255,255,.45); }
-.pacer-meta span[hidden] { display:none; }
-#pacerMeasured { color:var(--ink); font-weight:600; }
+/* ===== Yoga mode: the mascot breathes (in 4 s, out 6 s); same card as every other mode ===== */
+.mascot.breathe .muse, .mascot.breathe[data-state] .muse { animation:mascot-breathe 10s ease-in-out infinite; }
+.mascot.breathe .aura, .mascot.breathe[data-state] .aura { animation:aura-breathe 10s ease-in-out infinite; }
+@keyframes mascot-breathe { 0% { transform:scale(.93); } 40% { transform:scale(1.06); } 100% { transform:scale(.93); } }
+@keyframes aura-breathe { 0% { transform:scale(.82); opacity:.5; } 40% { transform:scale(1.15); opacity:1; } 100% { transform:scale(.82); opacity:.5; } }
+.breath-cue { margin-top:8px; display:inline-block; padding:5px 12px; border-radius:999px; font-size:14px; font-weight:600; color:var(--ink);
+  background:color-mix(in srgb,var(--accent) 14%,rgba(255,255,255,.6)); border:1px solid var(--glass-brd); white-space:nowrap; }
+.breath-cue[hidden] { display:none; }
 @media (prefers-reduced-motion: reduce) {
-  .pacer-circle.run { animation:none; transform:scale(.8); }
-  .pacer[data-phase="out"] .pacer-circle { transform:scale(.62); }
+  .mascot.breathe .muse, .mascot.breathe .aura { animation:none; }
   .seg-btn { transition:none; }
 }
-/* Short screens: the pacer takes the check-in's room in yoga mode so the card never overflows. */
-@media (max-height:820px) { .presence.yoga .slot-host { display:none; } .presence.yoga .signals { margin-top:12px; } .presence.yoga .cta { margin-top:auto; } }
 .conn-row .cmeta > b { display:block; }
 #connTitle:focus { outline:none; }
 @media (prefers-reduced-motion: reduce) { .bg, .view, .m, .jump { animation:none; } }

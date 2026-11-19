@@ -536,16 +536,18 @@ function renderModeSeg() {
   if (seg.dataset.ids !== ids) {
     seg.dataset.ids = ids;
     seg.replaceChildren(...lenses.map((l) => {
-      const b = el('button', 'seg-btn', SHORT_LENS[l.id] || l.name);
+      const b = el('button', 'seg-btn');
+      b.innerHTML = icon(`lens-${l.id}`); // icon-only; the name is in the tooltip and aria-label
       b.type = 'button';
       b.dataset.lens = l.id;
       b.setAttribute('role', 'radio');
-      b.title = l.description;
+      b.setAttribute('aria-label', l.name);
+      b.title = `${l.name} — ${l.description}`;
       b.onclick = () => setMode(l.id);
       return b;
     }));
   }
-  seg.hidden = currentView !== 'home';
+  seg.hidden = false;
   seg.querySelectorAll('.seg-btn').forEach((b) => {
     const on = b.dataset.lens === (lensMode || 'companion');
     b.setAttribute('aria-checked', String(on));
@@ -578,23 +580,22 @@ async function setMode(id) {
   renderModeSeg(); syncPacer();
 }
 
-/* ---------- Breathing pacer (yoga mode): about 6 breaths/min — in 4 s, out 6 s ---------- */
+/* ---------- Yoga mode: the same mascot card; the mascot breathes at ~6 breaths/min (in 4 s, out 6 s) ---------- */
 const INHALE_MS = 4000, EXHALE_MS = 6000, CYCLE_MS = INHALE_MS + EXHALE_MS;
-let pacerT0 = 0, pacerTimer = null;
+let pacerT0 = 0, pacerTimer = null, breathMeasured = '';
 function syncPacer() {
   const yoga = lensMode === 'yoga';
   const on = yoga && currentView === 'home';
-  document.querySelector('.presence').classList.toggle('yoga', yoga);
-  $('pacer').hidden = !yoga;
+  const m = $('mascot');
+  m.classList.toggle('breathe', yoga);
+  $('breathCue').hidden = !yoga;
   if (on && !pacerTimer) {
     pacerT0 = performance.now();
-    const c = $('pacerCircle');
-    c.classList.remove('run'); void c.offsetWidth; c.classList.add('run'); // restart the animation in step with the words
+    m.classList.remove('breathe'); void m.offsetWidth; m.classList.add('breathe'); // restart in step with the words
     tickPacer();
     pacerTimer = setInterval(tickPacer, 250);
   } else if (!on && pacerTimer) {
     clearInterval(pacerTimer); pacerTimer = null;
-    $('pacerCircle').classList.remove('run');
   }
 }
 function tickPacer() {
@@ -602,8 +603,9 @@ function tickPacer() {
   const inhale = t < INHALE_MS;
   const left = Math.ceil(((inhale ? INHALE_MS : CYCLE_MS) - t) / 1000);
   const word = (inhale ? 'Breathe in' : 'Breathe out') + (REDUCED_MOTION ? ` · ${left}` : '');
-  if ($('pacerWord').textContent !== word) $('pacerWord').textContent = word;
-  $('pacer').dataset.phase = inhale ? 'in' : 'out';
+  const text = `${word} · goal 6/min${breathMeasured ? ` · ${breathMeasured}` : ''}`;
+  if ($('breathCue').textContent !== text) $('breathCue').textContent = text;
+  $('mascot').dataset.phase = inhale ? 'in' : 'out';
 }
 function renderMeasuredBreath(signals, sensingActive, breath) {
   // Prefer the measured rate the yoga lens uses; fall back to the breathing tile.
@@ -611,10 +613,7 @@ function renderMeasuredBreath(signals, sensingActive, breath) {
   const measured = breath && typeof breath.perMin === 'number' ? `${breath.perMin}/min` : null;
   const v = measured || (b && /\d\/min$/.test(b.value || '') ? b.value : null);
   const talking = (breath && breath.talking) || (b && b.value === 'paused');
-  const m = $('pacerMeasured');
-  const text = v ? `You: ${v}` : sensingActive ? (talking ? 'You: paused (talking)' : 'You: measuring…') : '';
-  if (m.textContent !== text) m.textContent = text;
-  m.hidden = !text;
+  breathMeasured = v ? `you ${v}` : sensingActive ? (talking ? 'paused while talking' : 'measuring…') : '';
 }
 
 /* ---------- Parallel signal agents ---------- */
@@ -733,9 +732,12 @@ $('jumpLatest').onclick = scrollToLatest;
 
 /* ---------- AI status ---------- */
 function renderAi(ai) {
-  const t = ai.mode === 'demo' ? 'Demo replies (scripted)' : ai.connected ? `Groq · ${ai.model}` : 'AI not connected';
+  const problem = ai.mode !== 'demo' && !ai.connected;
+  const t = problem ? 'AI not connected' : '';
   if ($('aiStatus').textContent !== t) $('aiStatus').textContent = t;
-  $('aiStatus').classList.toggle('bad', ai.mode !== 'demo' && !ai.connected);
+  $('aiStatus').hidden = !problem;
+  $('aiStatus').classList.toggle('bad', problem);
+  $('newChat').title = ai.mode === 'demo' ? 'Start a new conversation (demo: scripted replies)' : `Start a new conversation · ${ai.provider} · ${ai.model}`;
   $('aiDisclosure').hidden = ai.mode === 'demo';
 }
 $('newChat').onclick = async () => {
