@@ -5,10 +5,29 @@ process.env.ATTUNE_ADAPTER = 'mock';
 process.env.SMARTSPECTRA_API_KEY = '';
 process.env.ATTUNE_ANTHROPIC_KEY = '';
 process.env.GROQ_API_KEY = '';
+delete process.env.ATTUNE_APP_ID;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createMemory } = require('../src/memory');
+
+// Safety net: anything that falls back to the default approvals/activity files (including spawned connector
+// processes, which inherit process.env) writes to a per-run temp dir, never the repo-root files.
+const SHARED_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-shared-'));
+process.env.ATTUNE_APPS_FILE = path.join(SHARED_DIR, 'apps.json');
+process.env.ATTUNE_ACTIVITY_FILE = path.join(SHARED_DIR, 'activity.jsonl');
+process.on('exit', () => { try { fs.rmSync(SHARED_DIR, { recursive: true, force: true }); } catch {} });
+
+/** Fresh approvals store + activity log in their own temp dir. */
+function tempApps() {
+  const { createAppApprovals } = require('../src/privacy/appApprovals');
+  const { createActivityLog } = require('../src/activity');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-apps-'));
+  const appsFile = path.join(dir, 'apps.json');
+  const activityFile = path.join(dir, 'activity.jsonl');
+  return { approvals: createAppApprovals(appsFile), activity: createActivityLog(activityFile), appsFile, activityFile, dir,
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
 
 function fakeAdapterFactory({ failWith } = {}) {
   const calls = { created: 0, started: 0, stopped: 0, callbacks: [] };
@@ -42,4 +61,4 @@ function tempMemory() {
   return { memory: createMemory(file), file, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
-module.exports = { fakeAdapterFactory, SAMPLE, tempMemory, tempConsentStore };
+module.exports = { fakeAdapterFactory, SAMPLE, tempMemory, tempConsentStore, tempApps };

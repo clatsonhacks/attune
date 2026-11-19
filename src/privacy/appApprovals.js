@@ -39,7 +39,8 @@ function slugAppId(name) {
 }
 
 /** Human label for an app id when none was given ("claude-desktop" → "Claude Desktop"). */
-const labelFor = (id) => id.split('-').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+const KNOWN_NAMES = { 'claude-desktop': 'Claude Desktop', chatgpt: 'ChatGPT', attune: 'Attune' };
+const labelFor = (id) => KNOWN_NAMES[id] || id.split('-').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 
 function invalid(message) {
   const err = new Error(message);

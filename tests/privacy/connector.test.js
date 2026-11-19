@@ -3,14 +3,16 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 const { createConnectorCore } = require('../../src/server');
-const { fakeAdapterFactory, SAMPLE, tempMemory } = require('../helpers');
+const { fakeAdapterFactory, SAMPLE, tempMemory, tempApps } = require('../helpers');
 
 function core(t, consentString, extra = {}) {
   const { factory, calls } = fakeAdapterFactory();
   const mem = tempMemory();
-  const c = createConnectorCore({ consentString, adapterFactory: factory, memory: mem.memory, log: () => {}, ...extra });
-  t.after(async () => { await c.shutdown(); mem.cleanup(); });
-  return { c, calls, mem };
+  const apps = tempApps();
+  const c = createConnectorCore({ consentString, adapterFactory: factory, memory: mem.memory, log: () => {},
+    approvals: apps.approvals, activity: apps.activity, appId: 'test-app', ...extra });
+  t.after(async () => { await c.shutdown(); mem.cleanup(); apps.cleanup(); });
+  return { c, calls, mem, apps };
 }
 
 test('without human consent the connector never starts the sensor', async (t) => {
@@ -40,7 +42,8 @@ test('with consent: starts lazily on first request, returns number-free context'
   assert.strictEqual(calls.started, 1);
   calls.callbacks[0](SAMPLE);
   const ctx = await c.getBodyContext();
-  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'say', 'state', 'suggestedUtterance']);
+  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'lens', 'say', 'state', 'suggestedUtterance']);
+  assert.strictEqual(ctx.lens, 'companion');
   assert.strictEqual(calls.started, 1); // reused, not restarted
 });
 
@@ -74,7 +77,8 @@ test('MCP server exposes no AI-callable consent tool', async (t) => {
   t.after(async () => { await client.close(); mem.cleanup(); });
   const names = (await client.listTools()).tools.map((x) => x.name).sort();
   assert.ok(!names.includes('grant_consent'));
-  assert.deepStrictEqual(names, ['forget_me', 'get_attune_status', 'get_body_context', 'memory_append', 'memory_get', 'record_correction']);
+  assert.ok(!names.some((n) => /consent|approv|allow|grant|permi/.test(n)), names.join());
+  assert.deepStrictEqual(names, ['forget_me', 'get_attune_status', 'get_body_context', 'list_purposes', 'memory_append', 'memory_get', 'record_correction']);
   const res = await client.callTool({ name: 'get_body_context', arguments: {} });
   assert.strictEqual(JSON.parse(res.content[0].text).state, 'consent_required');
 });
@@ -95,7 +99,7 @@ test('ChatGPT stdio profile exposes status and context and requires separate con
   t.after(async () => { await client.close(); mem.cleanup(); });
   await client.connect(transport);
   const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
-  assert.deepStrictEqual(tools, ['get_attune_status', 'get_body_context']);
+  assert.deepStrictEqual(tools, ['get_attune_status', 'get_body_context', 'list_purposes']);
   const result = await client.callTool({ name: 'get_body_context', arguments: {} });
   const context = JSON.parse(result.content[0].text);
   assert.strictEqual(context.state, 'consent_required');
