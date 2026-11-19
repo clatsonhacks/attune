@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createCompanion, bodyNote, groqKey } = require('../../src/companion');
-const { claudeDesktopStatus, SERVER_JS } = require('../../src/connectors');
+const { claudeDesktopStatus, registerClaudeDesktop, SERVER_JS } = require('../../src/connectors');
 
 const ENV = { GROQ_API_KEY: 'test-key' };
 function fakeFetch(responder) {
@@ -114,6 +114,31 @@ test('connector status reads the Claude Desktop config without exposing other se
     fs.writeFileSync(file, '{ not json');
     assert.strictEqual(claudeDesktopStatus(file).status, 'unreadable');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Claude registration creates an entry and preserves existing configuration', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attune-cfg-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const existing = path.join(dir, 'existing.json');
+  const fresh = path.join(dir, 'Claude', 'new.json');
+  const invalid = path.join(dir, 'invalid.json');
+  const original = { theme: 'dark', mcpServers: { other: { command: 'other' } } };
+  fs.writeFileSync(existing, JSON.stringify(original));
+  fs.writeFileSync(invalid, '{ malformed');
+
+  assert.deepStrictEqual(registerClaudeDesktop(fresh), { ok: true });
+  assert.deepStrictEqual(registerClaudeDesktop(existing), { ok: true });
+  const written = fs.readFileSync(existing, 'utf8');
+  const config = JSON.parse(written);
+  assert.strictEqual(config.theme, original.theme);
+  assert.deepStrictEqual(config.mcpServers.other, original.mcpServers.other);
+  assert.deepStrictEqual(config.mcpServers['attune-sense'].args, [SERVER_JS]);
+  assert.deepStrictEqual(claudeDesktopStatus(existing).consent, { sensing: true, aiSharing: true, memory: false });
+
+  assert.match(registerClaudeDesktop(existing).error, /already has an Attune entry/);
+  assert.strictEqual(fs.readFileSync(existing, 'utf8'), written);
+  assert.match(registerClaudeDesktop(invalid).error, /could not be read/);
+  assert.strictEqual(fs.readFileSync(invalid, 'utf8'), '{ malformed');
 });
 
 test('real mode removes demo-seeded history', () => {
