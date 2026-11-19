@@ -298,7 +298,8 @@ async function refreshApps(force = false) {
   try { r = await api('/api/apps'); } catch { return; }
   if (!r || !Array.isArray(r.apps)) return;
   const next = { apps: r.apps, pending: Array.isArray(r.pending) ? r.pending : [] };
-  const sig = JSON.stringify(next);
+  // Also rebuild once a minute so "5 min ago" on a pending request stays right.
+  const sig = JSON.stringify(next) + ':' + Math.floor(Date.now() / 60000);
   if (!force && sig === appsSig) return;
   appsData = next; appsSig = sig;
   renderBadge();
@@ -370,7 +371,7 @@ function renderPending() {
         const ok = await decide(p.app, p.lens, yes, status);
         if (ok && !$('pendingCard').contains(document.activeElement)) {
           const nextBtn = $('pendingList').querySelector('button');
-          (nextBtn || $('connList').querySelector(`.purposes-slot[data-app="${CSS.escape(p.app)}"] input`) || $('htitle')).focus?.();
+          (nextBtn || $('connList').querySelector(`.purposes-slot[data-app="${CSS.escape(p.app)}"] input`) || $('connTitle')).focus();
         }
       };
       allow.onclick = () => act(true);
@@ -410,7 +411,7 @@ function purposesBlock(app) {
       if (!r.ok) throw new Error(r.error);
     } catch (e) { status.textContent = (e && e.message) || 'Could not remove the app. Try again.'; remove.disabled = false; return; }
     await refreshApps(true);
-    $('connList').focus?.();
+    $('connTitle').focus();
   };
   head.append(remove);
   const ul = el('ul', 'lens-list');

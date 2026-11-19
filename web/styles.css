@@ -427,3 +427,5 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 /* Short screens: the pacer takes the check-in's room in yoga mode so the card never overflows. */
 @media (max-height:820px) { .presence.yoga .slot-host { display:none; } .presence.yoga .signals { margin-top:12px; } .presence.yoga .cta { margin-top:auto; } }
 .conn-row .cmeta > b { display:block; }
+#connTitle:focus { outline:none; }
+@media (prefers-reduced-motion: reduce) { .bg, .view, .m, .jump { animation:none; } }
