@@ -15,6 +15,7 @@ AI or another app to turn sensing on. Not a claim that nobody can ever access an
 | Presage Insight text | Inject instructions or medical claims into the AI | Normalizer drops instruction/medical sentences and numbers; AI gets at most 160 chars, marked as background | Review wording with real Insights (M2-06) |
 | Attune writing another app's config | Corrupt Claude Desktop settings, or register without the person knowing | Only after an explicit approval tick + session token; atomic write; never overwrites an existing Attune entry or an unreadable file | Show the exact entry before writing |
 | ChatGPT tunnel | Expose context to a shared workspace | Separate consent variable; only status + interpreted context tools | Per-app lens approvals (lenses milestone) |
+| AI app asking for another purpose | Get a lens it wasn't approved for (e.g. a game reading the companion lens) | Per-app approvals re-read on every call; unapproved → request recorded, no camera, no context; no approval tool | An MCP host can choose its client name, so set `ATTUNE_APP_ID` in each host config (the Claude Desktop installer does) |
 | Cloud operator (Attune) | Inspect data | No Attune server exists in the flow | Keep it that way; review any relay (M6-06) |
 | SDK vendor (Presage) | Receive measurements | Disclosed; out of our control | Network audit (M1-06, M2-06) |
 | Hosted AI provider | Receive chat text + approved context | Only approved, number-free context; only with `aiSharing` | Provider disclosure UI (M4-06) |

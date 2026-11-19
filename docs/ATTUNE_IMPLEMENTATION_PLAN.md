@@ -259,10 +259,10 @@ Do a legal/privacy review before releasing final language.
 each app for each purpose.
 
 - [x] `M8-01` Lens registry + companion lens (identical output to before) + neutral snapshot + lens-aware bridge reads.
-- [ ] `M8-02` Yoga/breathwork lens (may share breathing rate and target pace only) and casual-chat lens.
-- [ ] `M8-03` Per-app lens approvals stored locally; connector `get_body_context({ purpose })`, `list_purposes`;
+- [x] `M8-02` Yoga/breathwork lens (may share breathing rate and target pace only) and casual-chat lens.
+- [x] `M8-03` Per-app lens approvals stored locally; connector `get_body_context({ purpose })`, `list_purposes`;
   unapproved purposes are recorded as requests, never auto-approved.
-- [ ] `M8-04` Local activity log (which app read which lens, when — no directives or numbers).
+- [x] `M8-04` Local activity log (which app read which lens, when — no directives or numbers).
 - [ ] `M8-05` UI: approve purposes per app, pending requests, activity page, built-in companion mode switch.
 - [ ] `M8-06` Later: gaming lens with anti-engagement rules (breaks/difficulty only, never monetisation);
   exercise lens for recovery between sets only (webcam signal fails during motion).

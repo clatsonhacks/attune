@@ -39,8 +39,14 @@ If breathing can't be measured because the chest isn't in view for 20 s, it cont
 - **ChatGPT (tunnel profile, `server.js --chatgpt`):** only status and interpreted context are exposed; sensing stays
   off unless `ATTUNE_CHATGPT_CONSENT` is set in the local tunnel client. Context then travels through OpenAI's tunnel
   to the ChatGPT workspace the tunnel is associated with.
-- **Lenses (in progress):** each app reads context through a purpose-specific lens it was approved for; see
-  `src/lenses/`.
+- **Lenses:** each app asks with a purpose (`get_body_context({ purpose })`) and reads through that lens only if the
+  person approved it for that app. Companion and casual share no numbers; yoga shares breathing rate and target pace
+  only (never heart numbers). Unknown or unapproved purposes never start the camera.
+
+| Data | Where | Contents |
+|---|---|---|
+| App approvals | `.attune-apps.json` (repo root, gitignored; demo: `.attune-demo-apps.json`) | app id → approved lenses; pending purpose requests (app, lens, time) |
+| Activity log | `.attune-activity.jsonl` (gitignored; demo: `.attune-demo-activity.jsonl`) | time, app, lens, kind, state, say — never directives, notes or numbers |
 
 ## Never sent to the AI
 Pulse BPM, evidence strings (e.g. "pulse +14 over baseline"), raw metrics, video. Memory notes are stored
