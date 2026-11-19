@@ -22,7 +22,7 @@ const { createSession } = require('./session');
 const { createMemory } = require('./memory');
 const { createAdapter, isDemo } = require('./adapter');
 const { createCompanion } = require('./companion');
-const { connectorsStatus } = require('./connectors');
+const { connectorsStatus, registerClaudeDesktop } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
 const { createSensing } = require('./sensing');
@@ -274,6 +274,13 @@ function createApp({
       return sendJSON(res, 200, { private: memory.isMuted() });
     }
     if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus());
+    if (method === 'POST' && url === '/api/connectors/claude') {
+      if (demo) return sendJSON(res, 403, { error: 'Open Attune in real mode to register Claude Desktop.' });
+      const body = await readBody(req);
+      if (!body || body.approved !== true) return sendJSON(res, 400, { error: 'Approve Claude sharing before connecting.' });
+      const result = registerClaudeDesktop();
+      return sendJSON(res, result.ok ? 200 : 409, result);
+    }
 
     if (method === 'GET' && VENDOR[url]) {
       return fs.readFile(VENDOR[url], (err, data) => {

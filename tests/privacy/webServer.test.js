@@ -23,13 +23,13 @@ function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) 
   });
 }
 
-async function boot(t) {
+async function boot(t, { demo } = {}) {
   const port = 30000 + Math.floor(Math.random() * 20000);
   const { factory, calls } = fakeAdapterFactory();
   const mem = tempMemory();
   const cs = tempConsentStore();
   const replies = [];
-  const app = createApp({ port, adapterFactory: factory, memory: mem.memory, consentStore: cs.store, log: () => {},
+  const app = createApp({ port, demo, adapterFactory: factory, memory: mem.memory, consentStore: cs.store, log: () => {},
     reply: async ({ message, ctx }) => { replies.push(ctx); return { reply: 'ok', usedBody: !!ctx.say }; } });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
   t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); });
@@ -41,6 +41,13 @@ test('API rejects requests without the session token', async (t) => {
   const { port } = await boot(t);
   assert.strictEqual((await request(port, { path: '/api/state' })).status, 401);
   assert.strictEqual((await request(port, { path: '/api/state', headers: { 'x-attune-token': 'nope' } })).status, 401);
+});
+
+test('Claude registration requires a local session token and explicit approval', async (t) => {
+  const { port, api } = await boot(t, { demo: false });
+  const path = '/api/connectors/claude';
+  assert.strictEqual((await request(port, { path, method: 'POST', body: { approved: true } })).status, 401);
+  assert.strictEqual((await api(path, { approved: false })).status, 400);
 });
 
 test('API rejects foreign Host (DNS rebinding) and foreign Origin', async (t) => {
