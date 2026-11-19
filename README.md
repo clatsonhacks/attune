@@ -50,8 +50,23 @@ call and stops after 2 minutes without calls (`ATTUNE_IDLE_MS`).
 See SKILL.md for tool usage.
 
 ## Tools exposed
-`get_attune_status` · `get_body_context` · `record_correction` · `memory_get` · `memory_append` · `forget_me`
-(there is deliberately no consent tool)
+`get_attune_status` · `get_body_context` · `list_purposes` · `record_correction` · `memory_get` · `memory_append` · `forget_me`
+(there is deliberately no consent or approval tool; the ChatGPT profile exposes only the first three)
+
+## Purposes and approvals
+One neutral reading, many **lenses** (companion, yoga, casual, …). The AI passes a `purpose` to
+`get_body_context` (default `companion`) and can see the options with `list_purposes`, but only **you** decide
+which app may use which lens, in **Attune → Connectors**. An app that asks for a lens you have not allowed gets
+`purpose_not_approved` (the camera does not start) and its request shows up as pending for you to allow or deny.
+Apps you never configured may use `companion` only. Changes apply to the next call, without restarting the client.
+
+- Approvals live in `.attune-apps.json` (demo: `.attune-demo-apps.json`) at the repo root, shared by the web app
+  and the connector. Each app is identified by `ATTUNE_APP_ID`, else its MCP client name, else `claude-desktop`
+  (`chatgpt` for `--chatgpt`). Registering Claude Desktop from Attune sets `ATTUNE_APP_ID=claude-desktop`.
+- Every read is logged — app, lens, time, state, whether guidance was given; never guidance text or numbers —
+  in `.attune-activity.jsonl` (demo: `.attune-demo-activity.jsonl`), shown in Attune and clearable there.
+- The built-in companion may use every lens; pick which one it reads through with the mode switch.
+- Tests point `ATTUNE_APPS_FILE` / `ATTUNE_ACTIVITY_FILE` at temp files.
 
 ## Layout
 - `src/interpreter.js` — baseline + pulse-drift/expression thresholds, confidence gate, hysteresis, nudges.
