@@ -1,0 +1,133 @@
+'use strict';
+/* First-run setup (desktop app): the SmartSpectra key comes from an injected key store, never from .env or a log. */
+const test = require('node:test');
+const assert = require('node:assert');
+const http = require('http');
+const { tempMemory, tempConsentStore, tempApps } = require('../helpers');
+const { createApp } = require('../../src/webServer');
+
+function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const data = body !== undefined ? JSON.stringify(body) : null;
+    const req = http.request({ host: '127.0.0.1', port, method, path, headers: { host: `localhost:${port}`, ...headers, ...(data ? { 'content-type': 'application/json' } : {}) } }, (res) => {
+      let b = '';
+      res.on('data', (c) => (b += c));
+      res.on('end', () => { let json = null; try { json = JSON.parse(b); } catch {} resolve({ status: res.statusCode, json }); });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+function fakeKeyStore(initial = null, { failSet = false } = {}) {
+  const calls = [];
+  let value = initial;
+  return {
+    calls,
+    get value() { return value; },
+    async get() { calls.push('get'); return value; },
+    async set(k) { calls.push('set'); if (failSet) { const e = new Error(`disk full for ${k}`); e.code = 'ENOSPC'; throw e; } value = k; },
+    async clear() { calls.push('clear'); value = null; },
+  };
+}
+
+const KEY = 'abcdEFGH1234ijklMNOP5678';
+
+async function boot(t, { keyStore, demo = false } = {}) {
+  const port = 30000 + Math.floor(Math.random() * 20000);
+  const mem = tempMemory();
+  const cs = tempConsentStore();
+  const apps = tempApps();
+  const logs = [];
+  const made = [];
+  const makeAdapter = (opts) => { made.push(opts); return { name: 'fake', start() {}, async stop() {} }; };
+  const app = createApp({ port, demo, keyStore, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
+    activity: apps.activity, serviceFile: null, log: (m) => logs.push(m), reply: async () => ({ reply: 'ok' }) });
+  await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
+  t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); apps.cleanup(); });
+  const api = (path, body) => request(port, { method: body !== undefined ? 'POST' : 'GET', path, body, headers: { 'x-attune-token': app.guard.token } });
+  return { port, app, api, logs, made };
+}
+
+test('setup routes need the session token and a local Host', async (t) => {
+  const { port, app } = await boot(t, { keyStore: fakeKeyStore() });
+  assert.strictEqual((await request(port, { path: '/api/setup' })).status, 401);
+  assert.strictEqual((await request(port, { path: '/api/setup/key', method: 'POST', body: { key: KEY } })).status, 401);
+  const tok = { 'x-attune-token': app.guard.token };
+  assert.strictEqual((await request(port, { path: '/api/setup', headers: { ...tok, host: `evil.example:${port}` } })).status, 403);
+  assert.strictEqual((await request(port, { path: '/api/setup', headers: { ...tok, origin: 'https://evil.example' } })).status, 403);
+});
+
+test('plain service (no key store): needsKey follows SMARTSPECTRA_API_KEY and the key cannot be set', async (t) => {
+  const { api } = await boot(t);
+  const before = process.env.SMARTSPECTRA_API_KEY;
+  t.after(() => { process.env.SMARTSPECTRA_API_KEY = before; });
+  process.env.SMARTSPECTRA_API_KEY = '';
+  assert.deepStrictEqual((await api('/api/setup')).json, { desktop: false, needsKey: true, demo: false });
+  process.env.SMARTSPECTRA_API_KEY = KEY;
+  assert.strictEqual((await api('/api/setup')).json.needsKey, false);
+  assert.strictEqual((await api('/api/setup/key', { key: KEY })).status, 404);
+  assert.strictEqual((await api('/api/setup/key/clear', {})).status, 404);
+});
+
+test('desktop: saves a valid key through the key store, never logs it, and reports needsKey', async (t) => {
+  const ks = fakeKeyStore();
+  const { api, logs } = await boot(t, { keyStore: ks });
+  assert.deepStrictEqual((await api('/api/setup')).json, { desktop: true, needsKey: true, demo: false });
+  const r = await api('/api/setup/key', { key: `  ${KEY}\n` });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.json.needsKey, false);
+  assert.ok(!JSON.stringify(r.json).includes(KEY)); // the key is never echoed back
+  assert.strictEqual(ks.value, KEY); // trimmed
+  assert.strictEqual((await api('/api/setup')).json.needsKey, false);
+  assert.ok(!logs.some((l) => l.includes(KEY)));
+  const c = await api('/api/setup/key/clear', {});
+  assert.strictEqual(c.json.needsKey, true);
+  assert.strictEqual(ks.value, null);
+});
+
+test('desktop: malformed keys are refused with 400', async (t) => {
+  const ks = fakeKeyStore();
+  const { api } = await boot(t, { keyStore: ks });
+  for (const key of [undefined, '', '   ', 'short', 'has a space inside it 123', 'x'.repeat(257), 12345678901234567890, { k: 1 }]) {
+    const r = await api('/api/setup/key', key === undefined ? {} : { key });
+    assert.strictEqual(r.status, 400, `key ${JSON.stringify(key)}`);
+  }
+  assert.ok(!ks.calls.includes('set'));
+  assert.strictEqual((await api('/api/setup/key', { key: 'a'.repeat(16) })).status, 200);
+  assert.strictEqual((await api('/api/setup/key', { key: 'a'.repeat(256) })).status, 200);
+});
+
+test('desktop: a key store failure is a 500 without the key in the log or the response', async (t) => {
+  const { api, logs } = await boot(t, { keyStore: fakeKeyStore(null, { failSet: true }) });
+  const r = await api('/api/setup/key', { key: KEY });
+  assert.strictEqual(r.status, 500);
+  assert.ok(!JSON.stringify(r.json).includes(KEY));
+  assert.ok(!logs.some((l) => l.includes(KEY)));
+  assert.strictEqual((await api('/api/setup')).json.needsKey, true);
+});
+
+test('desktop: the stored key reaches the sensor adapter; .env is not used', async (t) => {
+  const before = process.env.SMARTSPECTRA_API_KEY;
+  process.env.SMARTSPECTRA_API_KEY = 'from-dotenv-should-not-be-used';
+  t.after(() => { process.env.SMARTSPECTRA_API_KEY = before; });
+  const { api, made } = await boot(t, { keyStore: fakeKeyStore(KEY) });
+  assert.strictEqual((await api('/api/setup')).json.needsKey, false); // loaded from the store at start
+  await api('/api/consent', { sensing: true, presageAck: true });
+  assert.strictEqual(made.length, 1);
+  assert.strictEqual(made[0].apiKey, KEY);
+  // A new key stops the running camera so the next start uses it.
+  const other = 'zyxwVUTS9876rqpoNMLK5432';
+  await api('/api/setup/key', { key: other });
+  assert.notStrictEqual((await api('/api/state')).json.sensing.state, 'active');
+  await api('/api/sensing', { action: 'start' });
+  assert.strictEqual(made[1].apiKey, other);
+});
+
+test('plain service passes no apiKey (the adapter reads SMARTSPECTRA_API_KEY itself)', async (t) => {
+  const { api, made } = await boot(t);
+  await api('/api/consent', { sensing: true, presageAck: true });
+  assert.strictEqual(made.length, 1);
+  assert.ok(!('apiKey' in made[0]));
+});

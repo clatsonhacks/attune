@@ -75,7 +75,7 @@ function sameSecret(a, b) {
 
 function createApp({
   port = 3000,
-  adapterFactory = () => createAdapter({ intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250 }),
+  adapterFactory = null, // default: createAdapter(), with the key from keyStore in desktop mode
   demo = isDemo(),
   // Everything lives in the per-user data folder (src/paths.js); demo mode uses its own subfolder.
   memory = createMemory(defaultMemoryFile(demo)),
@@ -89,7 +89,21 @@ function createApp({
   registerClaude = registerClaudeDesktop, // test hook
   // Where the running service announces its port + connector token to connectors (null: don't announce).
   serviceFile = storeFile('service', { demo }),
+  // Desktop app only: { get(): Promise<string|null>, set(key): Promise<void>, clear(): Promise<void> }, backed by
+  // OS-encrypted storage. When given, the SmartSpectra key comes from here (never from .env), is kept in memory only
+  // and reaches nothing but the sensor worker's environment.
+  keyStore = null,
+  makeAdapter = createAdapter, // test hook: what the default adapterFactory calls
 } = {}) {
+  const desktop = !!keyStore;
+  let storedKey = null;
+  const keyReady = desktop
+    ? Promise.resolve().then(() => keyStore.get()).then((k) => { storedKey = typeof k === 'string' && k ? k : null; })
+      .catch((e) => log(`could not read the saved camera key (${(e && e.code) || 'error'})`))
+    : Promise.resolve();
+  const hasKey = () => (desktop ? !!storedKey : !!process.env.SMARTSPECTRA_API_KEY);
+  adapterFactory = adapterFactory || (() => makeAdapter({
+    intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250, ...(desktop ? { apiKey: storedKey || '' } : {}) }));
   companion = companion || createCompanion({ demo, log });
   const replyFn = reply || companion.reply;
   const guard = createLocalGuard({ port });
@@ -347,12 +361,43 @@ function createApp({
     return sendJSON(res, 200, { ok: true });
   }
 
+  /* ---- First-run setup (desktop app): the SmartSpectra key ---- */
+  const setupPayload = () => ({ desktop, needsKey: !hasKey(), demo });
+  /** Loose shape check only: 16–256 visible characters, no whitespace inside. Returns the trimmed key or null. */
+  function cleanKey(k) {
+    if (typeof k !== 'string') return null;
+    const t = k.trim();
+    return t.length >= 16 && t.length <= 256 && /^\S+$/.test(t) ? t : null;
+  }
+  async function handleSetup(req, res, method, url) {
+    if (method === 'GET' && url === '/api/setup') return sendJSON(res, 200, setupPayload());
+    if (method !== 'POST' || (url !== '/api/setup/key' && url !== '/api/setup/key/clear')) return sendJSON(res, 404, { error: 'not found' });
+    if (!desktop) return sendJSON(res, 404, { error: 'The camera key can only be set in the Attune desktop app. Use .env with npm run web.' });
+    const body = await readBody(req);
+    const clearing = url === '/api/setup/key/clear';
+    const key = clearing ? null : cleanKey(body.key);
+    if (!clearing && !key) return sendJSON(res, 400, { error: 'That does not look like a SmartSpectra key. Paste the whole key, without spaces.' });
+    try {
+      if (clearing) await keyStore.clear(); else await keyStore.set(key);
+    } catch (e) {
+      log(`could not ${clearing ? 'remove' : 'save'} the camera key (${(e && e.code) || 'error'})`); // never the key itself
+      return sendJSON(res, 500, { error: clearing ? 'Could not remove the key.' : 'Could not save the key securely on this computer.' });
+    }
+    storedKey = key;
+    log(clearing ? 'camera key removed' : 'camera key saved');
+    // A running camera keeps the old key; stop it so the next start uses the new one (or none).
+    if (sensing.status().state === 'active' || sensing.status().state === 'starting') { clearTimeout(idleTimer); idleAt = null; await sensing.release('key_changed'); }
+    return sendJSON(res, 200, { ok: true, ...setupPayload() });
+  }
+
   async function handle(req, res) {
     const { method } = req;
     const [url, query = ''] = req.url.split('?');
     const isApi = url.startsWith('/api/');
     const denied = guard.check(req, { requireToken: isApi });
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
+    await keyReady; // the saved key is loaded before anything can start the camera
+    if (url === '/api/setup' || url.startsWith('/api/setup/')) return handleSetup(req, res, method, url);
     if (url.startsWith(CONNECTOR_PREFIX)) return handleConnector(req, res, method, url.slice(CONNECTOR_PREFIX.length), query);
 
     if (method === 'GET' && url === '/api/state') return sendJSON(res, 200, statePayload());
@@ -524,7 +569,7 @@ function createApp({
     await new Promise((r) => server.close(() => r()));
   }
 
-  return { server, consent, sensing, guard, bridge, capabilities, approvals, activity, close, serviceFile, connectorToken };
+  return { server, consent, sensing, guard, bridge, capabilities, approvals, activity, close, serviceFile, connectorToken, keyReady };
 }
 
 if (require.main === module) {

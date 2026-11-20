@@ -17,17 +17,24 @@ function adapterKind() {
 
 const isDemo = () => adapterKind() === 'mock';
 
-function createAdapter(opts = {}) {
+/**
+ * opts.apiKey (desktop app): the SmartSpectra key from the app's key store; it replaces SMARTSPECTRA_API_KEY and
+ * reaches only the sensor worker's environment (never a file, never a log line).
+ */
+function createAdapter({ apiKey, ...opts } = {}) {
   const kind = adapterKind();
+  const key = apiKey != null ? apiKey : process.env.SMARTSPECTRA_API_KEY;
   const iso = process.env.ATTUNE_ISOLATE;
   const isolate = kind === 'smartspectra' ? iso !== '0' : iso === '1';
   if (isolate) {
     const { createIsolatedAdapter } = require('./isolated');
-    return createIsolatedAdapter({ kind, env: opts.intervalMs ? { ATTUNE_TICK_MS: String(opts.intervalMs) } : {} });
+    const env = opts.intervalMs ? { ATTUNE_TICK_MS: String(opts.intervalMs) } : {};
+    if (kind === 'smartspectra' && apiKey != null) env.SMARTSPECTRA_API_KEY = apiKey;
+    return createIsolatedAdapter({ kind, env });
   }
   if (kind === 'smartspectra') {
     const { createSmartSpectraAdapter } = require('./smartspectra');
-    return createSmartSpectraAdapter({ apiKey: process.env.SMARTSPECTRA_API_KEY, ...opts });
+    return createSmartSpectraAdapter({ apiKey: key, ...opts });
   }
   return createMockAdapter(opts);
 }
