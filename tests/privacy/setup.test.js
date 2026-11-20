@@ -40,14 +40,16 @@ async function boot(t, { keyStore, demo = false } = {}) {
   const cs = tempConsentStore();
   const apps = tempApps();
   const logs = [];
+  const restarts = [];
+  const restarter = { supported: true, async restart() { restarts.push(true); return { ok: true }; } };
   const made = [];
   const makeAdapter = (opts) => { made.push(opts); return { name: 'fake', start() {}, async stop() {} }; };
-  const app = createApp({ port, demo, keyStore, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
+  const app = createApp({ port, demo, keyStore, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
     activity: apps.activity, serviceFile: null, log: (m) => logs.push(m), reply: async () => ({ reply: 'ok' }) });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
   t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); apps.cleanup(); });
   const api = (path, body) => request(port, { method: body !== undefined ? 'POST' : 'GET', path, body, headers: { 'x-attune-token': app.guard.token } });
-  return { port, app, api, logs, made };
+  return { port, app, api, logs, made, restarts };
 }
 
 test('setup routes need the session token and a local Host', async (t) => {
@@ -130,4 +132,22 @@ test('plain service passes no apiKey (the adapter reads SMARTSPECTRA_API_KEY its
   await api('/api/consent', { sensing: true, presageAck: true });
   assert.strictEqual(made.length, 1);
   assert.ok(!('apiKey' in made[0]));
+});
+
+test('Claude extension download and explicit restart confirmation', async (t) => {
+  const { port, api, restarts } = await boot(t, { keyStore: fakeKeyStore() });
+  assert.equal((await request(port, { path: '/api/connectors/claude/restart', method: 'POST', body: { confirmed: true } })).status, 401);
+  assert.equal((await api('/api/connectors/claude/restart', {})).status, 400);
+  assert.equal(restarts.length, 0);
+  assert.equal((await api('/api/connectors/claude/restart', { confirmed: true })).json.ok, true);
+  assert.equal(restarts.length, 1);
+  const download = await fetch('http://127.0.0.1:' + port + '/downloads/attune.mcpb');
+  assert.equal(download.headers.get('content-disposition'), 'attachment; filename="attune.mcpb"');
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), require('node:fs').readFileSync(__filename));
+});
+
+test('demo refuses Claude restart', async (t) => {
+  const { api, restarts } = await boot(t, { demo: true });
+  assert.equal((await api('/api/connectors/claude/restart', { confirmed: true })).status, 403);
+  assert.equal(restarts.length, 0);
 });

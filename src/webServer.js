@@ -86,6 +86,8 @@ function createApp({
   log = (m) => process.stderr.write(`[attune] ${m}\n`),
   approvals = createAppApprovals(defaultAppsFile(demo)),
   activity = createActivityLog(defaultActivityFile(demo)),
+  extensionFile = path.join(__dirname, '..', 'dist', 'attune.mcpb'),
+  restarter = require('./claudeRestart').createClaudeRestarter(),
   registerClaude = registerClaudeDesktop, // test hook
   // Where the running service announces its port + connector token to connectors (null: don't announce).
   serviceFile = storeFile('service', { demo }),
@@ -514,9 +516,26 @@ function createApp({
     }
     if (method === 'POST' && url === '/api/activity/clear') { activity.clear(); return sendJSON(res, 200, { ok: true }); }
 
-    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus({ lastSeenAt: (id) => lastSeen.get(id) || null }));
+    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, {
+      ...connectorsStatus({ lastSeenAt: (id) => lastSeen.get(id) || null }),
+      extensionAvailable: fs.existsSync(extensionFile), restartAvailable: restarter.supported && !demo, desktop,
+    });
+    if (method === 'GET' && url === '/downloads/attune.mcpb') {
+      let bundle;
+      try { bundle = await fs.promises.readFile(extensionFile); }
+      catch { return sendJSON(res, 404, { error: 'Build the Claude extension first.' }); }
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="attune.mcpb"',
+        'x-content-type-options': 'nosniff' });
+      return res.end(bundle);
+    }
+    if (method === 'POST' && url === '/api/connectors/claude/restart') {
+      if (demo) return sendJSON(res, 403, { error: 'Restart is unavailable in demo mode.' });
+      if ((await readBody(req))?.confirmed !== true) return sendJSON(res, 400, { error: 'Confirm the restart first.' });
+      const result = await restarter.restart();
+      return sendJSON(res, result.code || 200, result);
+    }
     if (method === 'POST' && url === '/api/connectors/claude') {
-      if (demo) return sendJSON(res, 403, { error: 'Open Attune in real mode to register Claude Desktop.' });
+      if (desktop || demo) return sendJSON(res, 403, { error: 'Use the Claude extension in desktop mode. Manual registration requires the real web service.' });
       const body = await readBody(req);
       if (!body || body.approved !== true) return sendJSON(res, 400, { error: 'Approve Claude sharing before connecting.' });
       const result = registerClaude();

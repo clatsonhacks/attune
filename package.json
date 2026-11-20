@@ -2,7 +2,7 @@
   "name": "attune-sense",
   "version": "0.4.0",
   "private": true,
-  "description": "Attune — a portable body-sense MCP connector for AI. Interprets contactless vitals (Presage SmartSpectra) into behavioral nudges, not numbers. Prototype scaffold.",
+  "description": "Attune \u00e2\u20ac\u201d a portable body-sense MCP connector for AI. Interprets contactless vitals (Presage SmartSpectra) into behavioral nudges, not numbers. Prototype scaffold.",
   "type": "commonjs",
   "main": "src/server.js",
   "scripts": {
@@ -14,7 +14,11 @@
     "test": "node --test \"tests/**/*.test.js\" && node test-adapter.js && node test-connector.js",
     "web:demo": "node src/webServer.js --demo",
     "build:icons": "node scripts/build-icons.js",
-    "build:extension": "node scripts/build-extension.js"
+    "build:extension": "node scripts/build-extension.js",
+    "desktop": "electron desktop/main.js",
+    "desktop:demo": "electron desktop/main.js --demo",
+    "build:desktop": "npm run build:extension && electron-builder --win nsis --x64",
+    "package:windows": "electron-builder --win nsis --x64"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -28,5 +32,45 @@
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.attune.desktop",
+    "productName": "Attune",
+    "directories": {
+      "output": "dist/desktop"
+    },
+    "extraMetadata": {
+      "main": "desktop/main.js"
+    },
+    "asar": false,
+    "npmRebuild": false,
+    "files": [
+      "desktop/**/*",
+      "src/**/*",
+      "web/**/*",
+      "extension/icon.png",
+      "!node_modules/@smartspectra/node-sdk-linux-*/**/*",
+      "!node_modules/@smartspectra/node-sdk-darwin-*/**/*",
+      "!node_modules/lucide-static/**/*",
+      "!node_modules/simple-icons/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/attune.mcpb",
+        "to": "attune.mcpb"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "extension/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false
+    }
   }
 }

@@ -109,3 +109,11 @@ the full text; the AI only gets a short number-free note. `npm run test:adapter`
 ## Status
 Plan M0 ✅ · M1 consent + local boundary + worker isolation ✅ · M2 Insights ✅ (live-webcam validation pending) ·
 M3 Context Bridge ✅ · next: M4 Attune Live voice.
+
+## Windows desktop and Claude extension
+
+Run `npm ci` and `npm run build:desktop` on Windows x64. The build places the NSIS installer in `dist/desktop/` and the standalone Claude Desktop extension in `dist/attune.mcpb`. For development, run `npm run desktop:demo` for synthetic readings or `npm run desktop` for the setup flow. The desktop app uses port 3000 by default. Quit any existing Attune web service on that port before launching it.
+
+The first-run screen accepts a personal SmartSpectra key and stores it encrypted for the current Windows user. You can skip setup, or replace or remove the key later in the sidebar. Camera consent is a separate step. Closing the window leaves the service in the system tray. Choose **Quit Attune** there to shut it down.
+
+In **Connectors**, select **Install in Claude**, open the downloaded extension in Claude Desktop and confirm installation. The connector uses the running Attune service. Set its allowed purposes in Attune and ask Claude to check Attune's status. The last-seen time records when Claude reaches the service. On Windows, **Restart Claude Desktop** reopens the Microsoft Store build after confirmation. Save drafts and finish active sessions first.

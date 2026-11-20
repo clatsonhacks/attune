@@ -3,7 +3,7 @@
 ## Project
 Attune: a private local "sensing layer" for AI apps. Webcam + Presage SmartSpectra (isolated worker) → neutral
 snapshot → **lenses** (companion, yoga, casual) → AI apps via a local MCP connector, approved per app by the person.
-Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (134 passing at `2c1e8a9`).
+Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (152 passing after desktop integration).
 
 ## Rules from the owner
 - Small commits, author `clatsonhacks`, **no Co-Authored-By / trailer lines**, push to `main`.
@@ -23,23 +23,17 @@ Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (134 pa
 - Packaging research: `C:\Users\clats\AppData\Local\Temp\claude\…\scratchpad\research\findings.md`
   (MCPB 0.3 format, Electron 45, safeStorage async, Claude restart).
 
-## In progress (agents stopped by the usage limit — resume, don't restart)
-| Worktree | Branch | Done | Left |
-|---|---|---|---|
-| `C:\Users\clats\VSC\attune-wt-ext` | `agent/extension` | MCPB package + `npm run build:extension` → `dist/attune.mcpb` (3 commits) | `src/claudeRestart.js` (uncommitted), "Install in Claude" button, `GET /downloads/attune.mcpb`, restart route + UI, tests, docs |
-| `C:\Users\clats\VSC\attune-wt-desktop` | `agent/desktop` | keyStore + `/api/setup*`, Electron-safe worker env (2 commits) | first-run setup UI (`web/*` uncommitted), `desktop/` Electron shell, electron-builder NSIS, docs |
+## Desktop and extension integration
 
-Both worktrees have their **own** `node_modules` (npm ci). Merge: `git rebase main` in the worktree, then
-`git merge --ff-only` on main, `npm test`, push. Before `git worktree remove`, make sure no `node_modules` is a
-junction to main (delete the junction with `[System.IO.Directory]::Delete(path, $false)` first).
+Both feature branches have been merged into the local checkout. The first-run screens and restart helper are integrated. The desktop app includes a Windows tray, OS-encrypted camera-key storage, camera check, and the Claude extension download. The restart control requires an explicit confirmation and targets the Microsoft Store installation.
 
-## Next, in order
-1. Finish + merge both branches (expect small conflicts in `web/app.js`, `src/webServer.js`).
-2. Restart the live service (`npm run web`, port 3000) and Claude Desktop (ask the owner first; only kill
-   processes under `\WindowsApps\Claude_`), then **end-to-end tests**:
-   Claude with the live camera, and the `--chatgpt` profile via an MCP client (ChatGPT tunnel needs the owner's account).
-3. **Voice to voice (plan M4)** on Groq: `whisper-large-v3` (STT) + `canopylabs/orpheus-v1-english` (TTS), reading
-   context through the Context Bridge (`subscribe`), never waiting on sensing.
+Use `npm run build:desktop` for the Windows x64 installer and the standalone extension. See the README for the development commands and installation flow. The desktop and web service both use port 3000 by default.
+
+## Remaining verification and later work
+
+- Install the extension in the owner's Claude Desktop and verify the first connector request and last-seen time. A real-camera check and restarting the live service or Claude need the owner's participation.
+- The test suite exercises the ChatGPT profile through an MCP stdio client. Testing the hosted ChatGPT tunnel requires the owner's account.
+- Voice-to-voice on Groq is the next milestone (M4). Read context through the Context Bridge without blocking audio on sensing.
 
 ## Known gaps
 Not yet verified with a real face in view: SDK positioning (owner's face was "too low" last run), face-only

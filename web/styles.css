@@ -419,3 +419,30 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .conn-row .cmeta > b { display:block; }
 #connTitle:focus { outline:none; }
 @media (prefers-reduced-motion: reduce) { .bg, .view, .m, .jump { animation:none; } }
+
+/* ---------- First-run setup (desktop app) + camera key row ---------- */
+.setup-steps { display:flex; gap:8px; list-style:none; margin:0 0 18px; padding:0; flex-wrap:wrap; }
+.setup-steps li { display:flex; align-items:center; gap:7px; font-size:13.5px; color:var(--muted); padding:5px 11px 5px 6px; border-radius:999px; border:1px solid var(--glass-brd); background:rgba(255,255,255,.35); }
+.setup-steps .sn { display:grid; place-items:center; width:20px; height:20px; border-radius:50%; font-size:12px; font-weight:700; background:rgba(255,255,255,.7); color:var(--muted); }
+.setup-steps li.cur { color:var(--ink); font-weight:600; border-color:var(--accent); }
+.setup-steps li.cur .sn, .setup-steps li.done .sn { background:var(--accent); color:#fff; }
+.setup h2:focus { outline:none; }
+.setup .dlg-sub a { color:var(--accent); }
+.key-field { display:block; margin:0 0 14px; }
+.key-field span { display:block; font-size:14px; font-weight:600; margin-bottom:6px; }
+.key-field input { width:100%; padding:12px 14px; border-radius:14px; border:1px solid var(--glass-brd); background:rgba(255,255,255,.6); color:var(--ink); font-size:16px; font-family:ui-monospace, Consolas, monospace; }
+.key-field input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent); }
+.setup-ok { display:flex; align-items:center; gap:7px; margin:0 0 12px; font-size:14.5px; font-weight:600; color:#2f7d52; }
+.setup-ok[hidden] { display:none; }
+.setup-cam { display:flex; align-items:center; gap:10px; padding:14px 16px; border-radius:14px; border:1px solid var(--glass-brd); background:rgba(255,255,255,.45); font-size:15.5px; }
+.setup-cam.found { border-color:#2f9e63; background:color-mix(in srgb,#2f9e63 10%,rgba(255,255,255,.5)); }
+.setup-cam .ic { color:var(--accent); flex:none; }
+.side-key { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:auto 0 0; padding:10px 12px; border-radius:14px; border:1px solid var(--glass-brd); background:rgba(255,255,255,.35); }
+.side-key[hidden] { display:none; }
+.side-key + .side-foot { margin-top:0; }
+.sk-text { flex:1 1 100%; display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.sk-text b { font-size:14px; }
+.sk-text small { font-size:12.5px; color:var(--muted); }
+.sk-actions { display:flex; gap:6px; }
+.sk-status { flex:1 1 100%; font-size:12.5px; color:var(--muted); }
+.sk-status:empty { display:none; }

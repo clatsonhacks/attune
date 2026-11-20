@@ -166,7 +166,29 @@ function copyConnectorText(text, label) {
   return block;
 }
 
-function renderClaudeSetup(meta, connector) {
+function renderClaudeSetup(meta, connector, options) {
+  if (options.extensionAvailable) {
+    const install = el('a', 'cbtn', 'Install in Claude');
+    install.href = '/downloads/attune.mcpb';
+    install.download = 'attune.mcpb';
+    meta.append(install, el('span', null, 'Open the downloaded extension in Claude Desktop and confirm installation. Choose its allowed purposes below.'));
+  }
+  if (options.restartAvailable) {
+    const restart = el('button', 'mini', 'Restart Claude Desktop');
+    const feedback = el('span');
+    feedback.setAttribute('role', 'status');
+    restart.onclick = async () => {
+      if (!window.confirm('Restart Claude Desktop now? Save drafts and finish running sessions first.')) return;
+      restart.disabled = true;
+      try {
+        const result = await api('/api/connectors/claude/restart', { confirmed: true });
+        feedback.textContent = result.ok ? 'Claude Desktop is reopening.' : result.error;
+      } catch { feedback.textContent = 'Could not reach Attune.'; }
+      finally { restart.disabled = false; }
+    };
+    meta.append(restart, feedback);
+  }
+  if (options.desktop) return;
   if (connector.registered) {
     meta.append(el('span', null, connector.pointsToThisInstall
       ? 'Registered in Claude Desktop. Camera sensing, AI sharing and memory follow your choices here in Attune.'
@@ -251,7 +273,7 @@ async function loadConnectors() {
       avatar.innerHTML = icon(CONN_ICONS[connector.id] || 'connectors');
       const meta = el('div', 'cmeta');
       meta.append(el('b', null, connector.name));
-      if (connector.id === 'claude-desktop') renderClaudeSetup(meta, connector);
+      if (connector.id === 'claude-desktop') renderClaudeSetup(meta, connector, result);
       if (connector.id === 'chatgpt') renderChatGPTSetup(meta, connector);
       if (connector.id === 'other') {
         const setup = el('details', 'conn-setup');
@@ -700,6 +722,7 @@ async function poll() {
     const active = s.sensing && s.sensing.state === 'active';
     const errored = s.sensing && s.sensing.state === 'error';
     renderCamera(s, c, active, errored);
+    renderSetupCam(s);
     if (s.lensMode && s.lensMode !== lensMode && !modeBusy) { lensMode = s.lensMode; renderModeSeg(); syncPacer(); }
     renderMeasuredBreath(s.signals, active, s.breath);
     $('insightBox').hidden = !active;
@@ -771,15 +794,20 @@ function openConsent() {
 }
 function syncConsentForm() { $('consentStart').disabled = !($('cSensing').checked && $('cPresage').checked); }
 ['cSensing', 'cPresage'].forEach((id) => ($(id).onchange = syncConsentForm));
-$('consentCancel').onclick = () => { $('consentDlg').hidden = true; rememberAsked(); };
+$('consentCancel').onclick = () => { $('consentDlg').hidden = true; rememberAsked(); afterConsentDialog(); };
 $('consentStart').onclick = async () => {
   const r = await api('/api/consent', { sensing: true, presageAck: true, aiSharing: $('cAi').checked, memory: $('cMemory').checked });
   if (r.error) { $('consentErr').textContent = r.error; $('consentErr').hidden = false; return; }
   $('consentDlg').hidden = true;
   rememberAsked();
-  poll();
+  await poll();
+  afterConsentDialog();
 };
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('consentDlg').hidden) $('consentDlg').hidden = true; });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('consentDlg').hidden) { $('consentDlg').hidden = true; afterConsentDialog(); }
+  else if (!$('setupDlg').hidden) closeSetup();
+});
 /* ---------- Camera button: allow / pause / resume / turn on now ---------- */
 let sensingInfo = {};
 function cameraAction() {
@@ -851,14 +879,135 @@ $('chatForm').onsubmit = async (e) => {
   if (lastState) proposeMood(moodFor({ ...lastState, state: r.state || lastState.state }), true);
 };
 
+/* ---------- First-run setup (desktop app): camera key → camera check → connect Claude ---------- */
+// Shown only when the desktop app has no SmartSpectra key yet. The key goes to /api/setup/key once and is never read back.
+let setup = { desktop: false, needsKey: false, demo: false }, setupStep = 0, setupKeyOnly = false, setupWaitingConsent = false;
+async function loadSetup() {
+  try {
+    const r = await api('/api/setup');
+    if (r && typeof r.desktop === 'boolean') setup = { desktop: r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
+  } catch { return; }
+  renderKeyRow();
+  if (setup.desktop && setup.needsKey && !setupSkipped()) openSetup(1);
+}
+function setupSkipped() { try { return sessionStorage.getItem('attune_setup_skipped') === '1'; } catch { return false; } }
+function openSetup(step, keyOnly = false) {
+  setupKeyOnly = keyOnly;
+  $('setupKey').value = '';
+  $('setupErr').hidden = true;
+  $('setupSave').disabled = true;
+  $('setupDemoNote').hidden = !setup.demo;
+  $('setupSkip').textContent = keyOnly ? 'Cancel' : 'Skip for now';
+  $('setupSteps').hidden = keyOnly;
+  $('setupDlg').hidden = false;
+  showSetupStep(step);
+}
+function showSetupStep(n) {
+  setupStep = n;
+  [1, 2, 3].forEach((i) => { $('setupStep' + i).hidden = i !== n; });
+  $('setupSteps').querySelectorAll('li').forEach((li) => {
+    const i = Number(li.dataset.step);
+    li.classList.toggle('cur', i === n);
+    li.classList.toggle('done', i < n);
+    if (i === n) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+  });
+  $('setupSaved').hidden = setup.needsKey;
+  if (n === 2 && lastState) renderSetupCam(lastState);
+  (n === 1 ? $('setupKey') : $('setupStep' + n).querySelector('h2')).focus();
+}
+function closeSetup() { $('setupKey').value = ''; $('setupDlg').hidden = true; setupStep = 0; }
+$('setupKey').oninput = () => { $('setupSave').disabled = !$('setupKey').value.trim(); $('setupErr').hidden = true; };
+$('setupKey').onkeydown = (e) => { if (e.key === 'Enter' && !$('setupSave').disabled) $('setupSave').click(); };
+$('setupSave').onclick = async () => {
+  $('setupSave').disabled = true;
+  let r;
+  try { r = await api('/api/setup/key', { key: $('setupKey').value }); } catch { r = null; }
+  if (!r || !r.ok) {
+    $('setupErr').textContent = (r && r.error) || 'Could not reach Attune. Try again.';
+    $('setupErr').hidden = false;
+    $('setupSave').disabled = false;
+    $('setupKey').focus();
+    return;
+  }
+  $('setupKey').value = '';
+  setup = { desktop: !!r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
+  renderKeyRow('Saved securely on this computer.');
+  if (setupKeyOnly) return closeSetup();
+  showSetupStep(2);
+};
+$('setupSkip').onclick = () => {
+  if (!setupKeyOnly) { try { sessionStorage.setItem('attune_setup_skipped', '1'); } catch {} }
+  closeSetup();
+};
+$('setupLater').onclick = closeSetup;
+$('setupNext').onclick = () => showSetupStep(3);
+$('setupDone').onclick = closeSetup;
+$('setupConnectors').onclick = () => { closeSetup(); switchView('connectors'); };
+// Step 2 uses the normal consent dialog: setup steps aside while it is open and comes back afterwards.
+$('setupCamBtn').onclick = async () => {
+  if (!consent) { setupWaitingConsent = true; $('setupDlg').hidden = true; openConsent(); return; }
+  try { await api('/api/sensing', { action: 'start' }); } catch {}
+  poll();
+};
+function afterConsentDialog() {
+  if (!setupWaitingConsent) return;
+  setupWaitingConsent = false;
+  $('setupDlg').hidden = false;
+  showSetupStep(2);
+}
+function renderSetupCam(s) {
+  if (setupStep !== 2) return;
+  const sens = s.sensing || {}, cam = sens.camera || {};
+  const allowed = !!(s.consent && s.consent.sensing);
+  const active = sens.state === 'active';
+  const found = active && cam.validationCode === 0; // "validation ok": SmartSpectra sees one face
+  let text;
+  if (sens.state === 'error') text = `The camera could not start: ${sens.error || 'unknown error'}`;
+  else if (!allowed) text = 'The camera is off.';
+  else if (sens.paused) text = 'The camera is paused.';
+  else if (sens.state === 'starting') text = 'Starting the camera…';
+  else if (!active) text = 'The camera is off.';
+  else if (setup.demo) text = 'Demo camera check complete with synthetic readings.';
+  else if (found) text = 'Face found — you are all set.';
+  else text = CAM_HINTS[cam.validationCode] || cam.hint || (cam.processing === 'starting' ? 'Getting a clear view…' : 'Looking for your face…');
+  if ($('setupCamText').textContent !== text) $('setupCamText').textContent = text;
+  $('setupCam').classList.toggle('found', found);
+  const href = `assets/icons.svg#i-${found ? 'check' : 'face'}`;
+  if ($('setupCamIcon').getAttribute('href') !== href) $('setupCamIcon').setAttribute('href', href);
+  $('setupCamBtn').hidden = active || sens.state === 'starting';
+  $('setupCamLabel').textContent = !allowed ? 'Allow the camera' : sens.state === 'error' ? 'Try again' : 'Turn the camera on';
+  $('setupNext').hidden = !(found || (setup.demo && active));
+}
+
+/* Camera key row (sidebar, desktop app only): replace or remove the saved key. */
+function renderKeyRow(msg = '') {
+  $('keyRow').hidden = !setup.desktop;
+  $('keyState').textContent = setup.needsKey ? 'Not set' : 'Saved on this computer';
+  $('keyReplace').textContent = setup.needsKey ? 'Add key' : 'Replace';
+  $('keyRemove').hidden = setup.needsKey;
+  $('keyStatus').textContent = msg;
+}
+$('keyReplace').onclick = () => openSetup(1, true);
+$('keyRemove').onclick = async () => {
+  if (!confirm('Remove the camera key from this computer?\n\nAttune cannot measure until you add a key again.')) return;
+  try {
+    const r = await api('/api/setup/key/clear', {});
+    if (!r || !r.ok) throw new Error((r && r.error) || 'failed');
+    setup = { desktop: !!r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
+    renderKeyRow('Key removed.');
+  } catch { renderKeyRow('Could not remove the key. Try again.'); }
+};
+
 /* ---------- boot ---------- */
 scrollArea($('logHost'), $('log'));
 scrollArea($('slotHost'), $('slot'));
 scrollArea(document.querySelector('#consentDlg .dlg'));
+scrollArea(document.querySelector('#setupDlg .dlg'));
 scrollArea($('dayDetail'));
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
 loadLenses().then(() => refreshApps(true));
+loadSetup();
 // Requests made by an AI show up (badge + card) without a reload; the activity list refreshes while it is open.
 setInterval(() => { refreshApps(); if (currentView === 'activity') loadActivity(); }, 4000);
 scrollArea($('actHost'), $('actList'));

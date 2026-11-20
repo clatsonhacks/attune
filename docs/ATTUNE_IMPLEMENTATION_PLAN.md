@@ -269,9 +269,9 @@ each app for each purpose.
 
 ### M9 — Easy setup for everyone (P0 for release, started 20 Nov 2026)
 
-- [ ] `M9-01` One Attune service owns the camera, consent, approvals, activity and memory; local authenticated
+- [x] `M9-01` One Attune service owns the camera, consent, approvals, activity and memory; local authenticated
   connector API; the MCP connector becomes a thin client (fixes camera conflicts and the second consent place).
-- [ ] `M9-02` Claude Desktop one-click extension wrapping the thin connector.
+- [x] `M9-02` Claude Desktop one-click extension wrapping the thin connector.
 - [ ] `M9-03` Desktop app (Electron, Windows first): tray, bundled runtime, first-run setup that asks each user for
   their own Presage key (stored encrypted), camera check, Connect Claude + restart, "Claude can see Attune" check.
 - [ ] `M9-04` Presage licensing questions — see `docs/PRESAGE_LICENSING.md`. Until answered, every user brings
