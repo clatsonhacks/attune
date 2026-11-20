@@ -24,7 +24,8 @@ function showWindow() {
 async function start() {
   const file = path.join(dataDir({ demo: isDemo() }), 'camera-key.enc');
   const groqStore = createKeyStore(path.join(path.dirname(file), 'groq-key.enc'), require('electron').safeStorage);
-  service = createApp({ port, groqStore, keyStore: createKeyStore(file, require('electron').safeStorage),
+  const openaiStore = createKeyStore(path.join(path.dirname(file), 'openai-key.enc'), require('electron').safeStorage);
+  service = createApp({ port, groqStore, openaiStore, keyStore: createKeyStore(file, require('electron').safeStorage),
     ...(app.isPackaged ? { extensionFile: path.join(process.resourcesPath, 'attune.mcpb') } : {}) });
   service.server.listen(port, '127.0.0.1');
   await once(service.server, 'listening');
@@ -34,7 +35,7 @@ async function start() {
     if (new URL(url).origin !== origin) event.preventDefault();
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (['https://physiology.presagetech.com', 'https://api.physiology.presagetech.com', 'https://developers.openai.com', 'https://console.groq.com'].includes(new URL(url).origin)) {
+    if (['https://physiology.presagetech.com', 'https://api.physiology.presagetech.com', 'https://developers.openai.com', 'https://console.groq.com', 'https://platform.openai.com'].includes(new URL(url).origin)) {
       shell.openExternal(url).catch(() => {});
     }
     return { action: 'deny' };

@@ -17,7 +17,7 @@ npm ci
 npm start
 ```
 
-On first launch, **API Keys** asks which features you want to enable. Add your own **Groq** key for the built-in chat companion and a **Presage SmartSpectra** key for camera sensing. Either can be skipped. Reopen **API Keys** at any time to save, replace, or remove a key. Changes apply immediately. ChatGPT and Claude use their own connections and do not need a Groq key. Camera access still requires consent.
+On first launch, **API Keys** asks which features you want to enable. Add your own **Groq** key for the built-in chat companion and a **Presage SmartSpectra** key for camera sensing. Add an **OpenAI** key for live voice. Each key can be skipped. Reopen **API Keys** at any time to save, replace, or remove a key. Changes apply immediately. ChatGPT and Claude use their own connections and do not need a Groq key. Camera access still requires consent.
 
 For a judge walkthrough with synthetic readings and scripted replies, run `npm run desktop:demo` instead of `npm start`. Demo uses a separate data folder and needs no accounts or keys. Quit any running Attune instance from the tray before switching modes. To try Claude installation from a fresh checkout, run `npm run build:extension`, then open **Connectors** in Attune. The Windows installer already includes the extension.
 
@@ -31,11 +31,11 @@ Open **Claude voice** in Attune for connector setup. Once connected, open a new 
 
 To add sensing, allow camera sensing and AI sharing in Attune and enable the companion purpose for Claude. Say "Use Attune companion guidance before your replies. Keep talking while sensing warms up." Opening a Claude chat alone sends no event to Attune. An approved context request can start sensing after consent. SmartSpectra keeps sampling across turns and each request reads the latest cached guidance. Pause or revoke in Attune to stop sensing. The usual idle timeout applies after connector activity stops.
 
-## Talk to the built-in Groq companion
+## Live voice inside Attune
 
-In real mode, add your Groq key under **API Keys**. Open **Companion**, select **Groq voice**, and accept the microphone disclosure. Speak, then pause for about a second or choose **Send now**. Attune shows the transcript, speaks its reply, and listens again. Use **Interrupt** to take the next turn during a reply. Select **End voice** to stop. Leaving the companion or hiding the window also ends the session.
+In real mode, add your OpenAI API key under **API Keys**, then choose **Companion ? Start live voice**. Your microphone streams to OpenAI while the assistant speaks. Speak over a reply to interrupt it. **End live voice**, leaving the companion, or hiding the window closes the call and releases the microphone. Text chat continues to use Groq.
 
-Voice sends recorded turns to Groq for [Whisper transcription](https://console.groq.com/docs/speech-to-text), sends the transcript to the companion model, and sends reply text to Groq for [Orpheus English speech](https://console.groq.com/docs/text-to-speech). Your Groq account needs access to all three models. Attune keeps the audio in memory during processing. Camera sensing is optional. Voice uses fresh context only when sensing is already active and AI sharing is allowed. Voice works with the camera off or paused. If audio fails, you can keep using text chat.
+The service exchanges a WebRTC offer for an answer using your encrypted key. The audio connection is between your device and OpenAI. The local display receives transcripts and can update the current pacing cue only while sensing and AI sharing are enabled. Live voice uses OpenAI API billing and requires Realtime model access. Browser-only installs can set `OPENAI_API_KEY` before launch. [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc)
 
 **Consent once.** The first time, Attune asks for camera sensing and the Presage disclosure (AI sharing and
 memory are separate and optional). Your answer is remembered. After that the camera turns on when a chat starts
@@ -140,12 +140,12 @@ the full text; the AI only gets a short number-free note. `npm run test:adapter`
 
 ## Status
 Plan M0 ✅ · M1 consent + local boundary + worker isolation ✅ · M2 Insights ✅ (live-webcam validation pending) ·
-M3 Context Bridge ✅ · M4 turn-based Groq voice available. Live-device evaluation is pending.
+M3 Context Bridge ✅ · M4 live WebRTC voice available. Live-device evaluation is pending.
 
 ## Windows desktop and Claude extension
 
 Run `npm ci` and `npm run build:desktop` on Windows x64. The build places the NSIS installer in `dist/desktop/` and the standalone Claude Desktop extension in `dist/attune.mcpb`. For development, run `npm run desktop:demo` for synthetic readings or `npm run desktop` for the setup flow. The desktop app uses port 3000 by default. Quit any existing Attune web service on that port before launching it.
 
-On first launch, API Keys offers separate fields for SmartSpectra and Groq. Both are optional and encrypted for the current Windows user. Camera consent is a separate step. Closing the window leaves the service in the system tray. Choose **Quit Attune** there to shut it down.
+On first launch, API Keys offers separate fields for SmartSpectra, Groq and OpenAI. All are optional and encrypted for the current Windows user. Camera consent is a separate step. Closing the window leaves the service in the system tray. Choose **Quit Attune** there to shut it down.
 
 In **Connectors**, select **Install in Claude**, open the downloaded extension in Claude Desktop and confirm installation. The connector uses the running Attune service. Set its allowed purposes in Attune and ask Claude to check Attune's status. The last-seen time records when Claude reaches the service. On Windows, **Restart Claude Desktop** reopens the Microsoft Store build after confirmation. Save drafts and finish active sessions first.

@@ -71,7 +71,7 @@ const TITLES = { home: 'Companion', sensing: 'Sensing details', memory: 'Memory'
 let currentView = 'home';
 function switchView(v) {
   if (currentView === 'keys' && v !== 'keys') {
-    for (const id of ['camera', 'groq']) { $(id + 'Input').value = ''; $(id + 'Save').disabled = true; }
+    for (const id of Object.keys(keyRoutes)) { $(id + 'Input').value = ''; $(id + 'Save').disabled = true; }
   }
   $(v === 'sensing' ? 'detailSignals' : 'homeSignals').append($('signals'));
   currentView = v;
@@ -732,6 +732,7 @@ function addMsg(text, who, opts = {}) {
   const stick = who === 'user' || follow;
   $('log').appendChild(el);
   if (stick) scrollToLatest(); else $('jumpLatest').hidden = false;
+  return el;
 }
 async function poll() {
   try {
@@ -782,7 +783,9 @@ async function poll() {
     updateSlot();
     if (s.ai) renderAi(s.ai);
     lastState = s;
+    document.dispatchEvent(new CustomEvent('attune-guidance', { detail: s.vitalsInstruction || '' }));
   } catch (e) {
+    document.dispatchEvent(new CustomEvent('attune-guidance', { detail: '' }));
     $('vitalsInstruction').textContent = 'Current vitals instruction unavailable.';
     if (!(e instanceof TypeError && /fetch/i.test(e.message)) && !/stale session token/.test(e.message)) console.error('poll failed:', e);
   }
@@ -809,7 +812,7 @@ $('jumpLatest').onclick = scrollToLatest;
 /* ---------- AI status ---------- */
 function renderAi(ai) {
   const problem = ai.mode !== 'demo' && !ai.connected;
-  const t = problem ? 'AI not connected' : '';
+  const t = problem ? 'Text chat offline' : '';
   if ($('aiStatus').textContent !== t) $('aiStatus').textContent = t;
   $('aiStatus').hidden = !problem;
   $('aiStatus').classList.toggle('bad', problem);
@@ -927,23 +930,23 @@ $('chatForm').onsubmit = async (e) => {
 
 /* ---------- API keys and optional camera check ---------- */
 let setup = {}, setupStep = 0, setupWaitingConsent = false;
-const keyRoutes = { camera: '/api/setup/key', groq: '/api/setup/groq' };
+const keyRoutes = { camera: '/api/setup/key', groq: '/api/setup/groq', openai: '/api/setup/openai' };
 async function loadSetup(firstRun = false) {
   const r = await api('/api/setup/keys');
   if (typeof r.desktop !== 'boolean') throw new Error('Could not read key settings.');
   setup = r;
   $('keyHelp').textContent = r.desktop
-    ? 'Add your own keys for the features you want. Keys are encrypted for your computer account. Demo mode needs neither key.'
-    : 'For encrypted key management, run npm start from the checkout. The web-only service reads SMARTSPECTRA_API_KEY and GROQ_API_KEY from its environment.';
+    ? 'Add your own keys for the features you want. Keys are encrypted for your computer account. Demo mode needs no keys.'
+    : 'For encrypted key management, run npm start from the checkout. The web-only service reads SMARTSPECTRA_API_KEY, GROQ_API_KEY and OPENAI_API_KEY from its environment.';
   for (const id of Object.keys(keyRoutes)) {
-    const saved = id === 'camera' ? !r.needsKey : r.hasGroq;
+    const saved = { camera: !r.needsKey, groq: r.hasGroq, openai: r.hasOpenAI }[id];
     $(id + 'Input').disabled = !r.desktop;
     $(id + 'Save').hidden = !r.desktop;
     $(id + 'Remove').hidden = !r.desktop || !saved;
     $(id + 'Status').textContent = saved ? 'Configured' : 'No key added';
   }
   $('cameraCheck').hidden = r.needsKey && !r.demo;
-  if (firstRun && r.desktop && !r.demo && (r.needsKey || !r.hasGroq)) {
+  if (firstRun && r.desktop && !r.demo && (r.needsKey || !r.hasGroq || !r.hasOpenAI)) {
     let prompted = false;
     try { prompted = !!localStorage.getItem('attune_keys_intro'); localStorage.setItem('attune_keys_intro', '1'); } catch {}
     if (!prompted) switchView('keys');
@@ -963,7 +966,7 @@ for (const [id, route] of Object.entries(keyRoutes)) {
     finally { input.disabled = remove.disabled = false; save.disabled = !input.value.trim(); }
   }
   $(id + 'Form').onsubmit = (event) => { event.preventDefault(); if (!save.disabled) update(false); };
-  remove.onclick = () => { if (confirm('Remove the saved ' + (id === 'camera' ? 'SmartSpectra' : 'Groq') + ' key?')) update(true); };
+  remove.onclick = () => { if (confirm('Remove the saved ' + ({ camera: 'SmartSpectra', groq: 'Groq', openai: 'OpenAI' }[id]) + ' key?')) update(true); };
 }
 $('keysLater').onclick = () => switchView('home');
 $('cameraCheck').onclick = () => { $('setupDlg').hidden = false; showSetupStep(2); };

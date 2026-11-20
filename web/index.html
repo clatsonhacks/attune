@@ -115,16 +115,16 @@
             </section>
             <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
               <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
-            <div class="voice-bar"><button type="button" class="mini" id="voiceToggle">Groq voice</button>
+            <div class="voice-bar"><button type="button" class="mini" id="voiceToggle">Start live voice</button>
               <button type="button" class="mini" id="claudeVoiceSetup">Claude voice</button>
-              <button type="button" class="mini" id="voiceTurn" hidden>Send now</button>
+              <button type="button" class="mini" id="voicePlayback" hidden>Enable speaker</button>
               <select id="voiceMic" aria-label="Voice microphone" hidden><option value="">Default microphone</option></select>
               <span id="voiceStatus" role="status"></span></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
             </form>
-            <p class="hint" id="aiDisclosure" hidden>Your messages are sent to Groq's API to get a reply. Body guidance is added only if you allowed AI sharing — never numbers or video.</p>
+            <p class="hint" id="aiDisclosure" hidden>Typed messages go to Groq. Live voice uses OpenAI. Body guidance is added only if you allowed AI sharing — never numbers or video.</p>
             <p class="hint" id="hint" hidden>Demo mode (simulated vitals, scripted replies): wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
           </section>
         </div>
@@ -181,8 +181,15 @@
             <button class="mini danger" type="button" id="cameraRemove" hidden>Remove</button>
             <span id="cameraStatus" role="status"></span>
           </form>
+          <form class="key-card" id="openaiForm">
+            <h3>OpenAI</h3><p>Live voice inside Attune uses your OpenAI API billing. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Get an OpenAI key</a></p>
+            <label class="key-field"><span>OpenAI API key</span><input id="openaiInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" /></label>
+            <button class="mini" id="openaiSave" disabled>Save key</button>
+            <button class="mini danger" type="button" id="openaiRemove" hidden>Remove</button>
+            <span id="openaiStatus" role="status"></span>
+          </form>
           <form class="key-card" id="groqForm">
-            <h3>Groq</h3><p>Chat with the built-in companion. ChatGPT and Claude use their own connections. <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Get a Groq key</a></p>
+            <h3>Groq</h3><p>Text chat with the built-in companion. <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Get a Groq key</a></p>
             <label class="key-field"><span>Groq API key</span><input id="groqInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" /></label>
             <button class="mini" id="groqSave" disabled>Save key</button>
             <button class="mini danger" type="button" id="groqRemove" hidden>Remove</button>
@@ -240,7 +247,7 @@
       <p class="dlg-note"><b>You only answer this once.</b> Attune remembers your choice and turns the camera on by itself when a chat starts or when the AI asks for a reading, and off again after 5 minutes without chatting. A <b>Camera on</b> badge shows whenever it runs. You can pause it, or forget this permission, at any time.</p>
       <label class="opt"><input type="checkbox" id="cSensing" /><span><b>Camera sensing</b><small>Video is processed on this device by the SmartSpectra SDK. Attune does not send video or raw measurements to its own servers. You can pause any time.</small></span></label>
       <label class="opt"><input type="checkbox" id="cPresage" /><span><b>I understand Presage processing</b><small>The Presage SDK contacts Presage services for sign-in and automatic Insights, which can include physiological measurements. See <a href="https://api.physiology.presagetech.com/privacypolicy" target="_blank" rel="noopener">Presage's privacy policy</a>. Required to start.</small></span></label>
-      <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion (an AI model on Groq) receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
+      <label class="opt"><input type="checkbox" id="cAi" /><span><b>Share with the AI <em>(optional)</em></b><small>Lets the companion (Groq text chat or OpenAI live voice) receive short interpreted guidance like "slow down and check in" — never numbers or video.</small></span></label>
       <label class="opt"><input type="checkbox" id="cMemory" /><span><b>Remember on this device <em>(optional)</em></b><small>Stores interpretations and corrections locally so later sessions can continue. You can delete any day or everything.</small></span></label>
       <p class="fineprint warn" id="consentErr" hidden></p>
       <div class="dlg-actions">

@@ -208,12 +208,12 @@ Do a legal/privacy review before releasing final language.
 
 ### M4 — Attune Live: real voice-to-voice companion (P0; MVP showcase)
 
-The current MVP uses turn-based Groq Whisper ? companion ? Orpheus. It supports end-of-speech detection, manual interruption, microphone selection, cancellation and text fallback. It reads the active lens from the Context Bridge at reply time. Streaming duplex, automatic talk-over interruption and real-device latency evaluation are still open.
+Attune streams microphone input and spoken replies over a single OpenAI Realtime WebRTC connection. Server voice-activity detection can interrupt playback. A data channel carries transcripts and approved instruction updates; speech continues when camera sensing is paused. Real-device latency, model behavior and billing still require a live test.
 
 - [ ] `M4-01` Create `src/voice/` provider-independent interface: `start`, `stop`, `onUserSpeech`, `onAssistantSpeech`, `appendContext`, `interrupt`, `status`.
-- [ ] `M4-02` Use a supported streaming speech-to-speech provider for the first implementation (recommended investigation: **GPT-Live**). Keep API credentials out of UI code; use approved short-lived credentials and documented session authentication.
+- [x] `M4-02` Use a supported streaming speech-to-speech provider for the first implementation (recommended investigation: **GPT-Live**). Keep API credentials out of UI code; use approved short-lived credentials and documented session authentication.
 - [x] `M4-03` Ensure mic/audio path and SDK/Insights path are concurrent. Never await Insight generation or SDK metrics inside speech callbacks.
-- [ ] `M4-04` On meaningful state changes, supply quiet, short context when the model API supports it. GPT-Live documents `session.thinking.append` as a candidate; its acknowledgment indicates delivery to the session timeline, **not guaranteed immediate use by speech**. Validate the current schema at implementation time.
+- [x] `M4-04` On meaningful state changes, supply quiet, short context when the model API supports it. GPT-Live documents `session.thinking.append` as a candidate; its acknowledgment indicates delivery to the session timeline, **not guaranteed immediate use by speech**. Validate the current schema at implementation time.
 - [ ] `M4-05` Implement barge-in/interruptions, reconnection, audio-device switching, speech failure fallback, and continuation when camera sensing is paused.
 - [x] `M4-06` Add user-visible AI provider disclosure, microphone permission and privacy control independently of sensing permission.
 - [ ] `M4-07` Evaluate latency, false inferences, model behavior and cost. Default to tentative wording; never assert that pulse/expression proves an emotion or that a user is lying.

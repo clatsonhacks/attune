@@ -34,7 +34,7 @@ function fakeKeyStore(initial = null, { failSet = false } = {}) {
 
 const KEY = 'abcdEFGH1234ijklMNOP5678';
 
-async function boot(t, { keyStore, groqStore, speechProvider, demo = false } = {}) {
+async function boot(t, { keyStore, groqStore, openaiStore, realtimeCall, speechProvider, demo = false } = {}) {
   const port = 30000 + Math.floor(Math.random() * 20000);
   const mem = tempMemory();
   const cs = tempConsentStore();
@@ -44,7 +44,7 @@ async function boot(t, { keyStore, groqStore, speechProvider, demo = false } = {
   const restarter = { supported: true, async restart() { restarts.push(true); return { ok: true }; } };
   const made = [];
   const makeAdapter = (opts) => { made.push(opts); return { name: 'fake', start() {}, async stop() {} }; };
-  const app = createApp({ port, demo, keyStore, groqStore, speechProvider, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
+  const app = createApp({ port, demo, keyStore, groqStore, openaiStore, realtimeCall, speechProvider, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
     activity: apps.activity, serviceFile: null, log: (m) => logs.push(m), reply: async () => ({ reply: 'ok' }) });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
   t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); apps.cleanup(); });
@@ -213,4 +213,40 @@ test('Groq audio goes through the server and a voice turn never opens the camera
   assert.equal((await api('/api/voice/speak', { text: 'ok' })).status, 200);
   assert.equal(calls.length, 2);
   assert.equal(made.length, 0);
+});
+
+test('live voice exchanges SDP with the server-side key and enables automatic barge-in', async (t) => {
+  const { createRealtimeCall } = require('../../src/voice/realtime');
+  const seen = [];
+  const realtimeCall = (key, sdp, signal) => createRealtimeCall(key, sdp, signal, async (url, init) => {
+    assert.equal(url, 'https://api.openai.com/v1/realtime/calls');
+    assert.equal(init.headers.Authorization, 'Bearer ' + KEY);
+    assert.equal(init.body.get('sdp'), 'v=0 offer');
+    const config = JSON.parse(init.body.get('session'));
+    assert.deepEqual(config.audio.input.turn_detection, { type: 'server_vad', create_response: true, interrupt_response: true });
+    seen.push(config.model);
+    return new Response('v=0 answer');
+  });
+  const store = fakeKeyStore();
+  const { api, port, made } = await boot(t, { keyStore: fakeKeyStore(), openaiStore: store, realtimeCall });
+  assert.equal((await api('/api/voice/realtime', { sdp: 'v=0 offer' })).status, 409);
+  assert.equal((await api('/api/setup/openai', { key: KEY })).json.ok, true);
+  assert.equal((await api('/api/setup/keys')).json.hasOpenAI, true);
+  assert.equal((await request(port, { path: '/api/voice/realtime', method: 'POST', body: { sdp: 'v=0 offer' } })).status, 401);
+  assert.equal((await api('/api/voice/realtime', { sdp: 'invalid' })).status, 400);
+  const answer = await api('/api/voice/realtime', { sdp: 'v=0 offer' });
+  assert.equal(answer.json.sdp, 'v=0 answer');
+  assert.equal(JSON.stringify(answer.json).includes(KEY), false);
+  assert.deepEqual(seen, ['gpt-realtime-2.1']);
+  await api('/api/voice/realtime/activity', {});
+  assert.equal(made.length, 0);
+  await api('/api/setup/openai/clear', {});
+  assert.equal(store.value, null);
+  assert.equal((await api('/api/voice/realtime/activity', {})).status, 409);
+});
+
+test('live voice in demo cannot create an external call', async (t) => {
+  const { api } = await boot(t, { demo: true, keyStore: fakeKeyStore(), openaiStore: fakeKeyStore(KEY),
+    realtimeCall: async () => assert.fail('demo must not create a call') });
+  assert.equal((await api('/api/voice/realtime', { sdp: 'v=0 offer' })).status, 409);
 });

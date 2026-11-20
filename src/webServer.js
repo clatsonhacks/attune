@@ -100,12 +100,15 @@ function createApp({
   // and reaches nothing but the sensor worker's environment.
   keyStore = null,
   groqStore = null,
+  openaiStore = null,
+  realtimeCall = require('./voice/realtime').createRealtimeCall,
   speechProvider = createSpeechProvider(),
   makeAdapter = createAdapter, // test hook: what the default adapterFactory calls
 } = {}) {
   const desktop = !!keyStore;
   let storedKey = null;
-  let storedGroqKey = null;
+  let storedGroqKey = null, storedOpenAIKey = null;
+  const realtimeKey = () => desktop ? storedOpenAIKey : process.env.OPENAI_API_KEY;
   async function loadKey(store, apply) {
     if (!store) return;
     try { apply(await store.get()); }
@@ -113,6 +116,7 @@ function createApp({
   }
   const keyReady = Promise.all([
     loadKey(keyStore, (key) => { storedKey = key; }),
+    loadKey(openaiStore, (key) => { storedOpenAIKey = key; }),
     loadKey(groqStore, (key) => { storedGroqKey = key; }),
   ]);
   const hasKey = () => (desktop ? !!storedKey : !!process.env.SMARTSPECTRA_API_KEY);
@@ -247,7 +251,7 @@ function createApp({
           `  <meta name="attune-token" content="${guard.token}" />\n  <meta name="attune-style-nonce" content="${nonce}" />\n</head>`));
         headers['cache-control'] = 'no-store';
         headers['content-security-policy'] =
-          `default-src 'self'; style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'`;
+          `default-src 'self'; style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self'; frame-ancestors 'none'`;
       }
       res.writeHead(200, headers);
       res.end(data);
@@ -394,18 +398,20 @@ function createApp({
   }
   async function handleSetup(req, res, method, url) {
     if (method === 'GET' && url === '/api/setup/keys') {
-      return sendJSON(res, 200, { ...setupPayload(), hasGroq: !!(desktop ? storedGroqKey : groqKey()) });
+      return sendJSON(res, 200, { ...setupPayload(), hasOpenAI: !!realtimeKey(), hasGroq: !!(desktop ? storedGroqKey : groqKey()) });
     }
-    if (method === 'POST' && ['/api/setup/groq', '/api/setup/groq/clear'].includes(url)) {
-      if (!groqStore) return sendJSON(res, 404, { error: 'Open the desktop app to manage encrypted keys.' });
+    if (method === 'POST' && /^\/api\/setup\/(groq|openai)(?:\/clear)?$/.test(url)) {
+      const openai = url.startsWith('/api/setup/openai');
+      const store = openai ? openaiStore : groqStore;
+      if (!store) return sendJSON(res, 404, { error: 'Open the desktop app to manage encrypted keys.' });
       const clearing = url.endsWith('/clear');
       const body = await readBody(req);
       const key = clearing ? null : cleanKey(body?.key);
-      if (!clearing && !key) return sendJSON(res, 400, { error: 'Paste the complete Groq key without spaces.' });
-      try { if (clearing) await groqStore.clear(); else await groqStore.set(key); }
-      catch { return sendJSON(res, 500, { error: 'Could not update the encrypted Groq key.' }); }
-      storedGroqKey = key;
-      companion = makeCompanion();
+      if (!clearing && !key) return sendJSON(res, 400, { error: 'Paste the complete API key without spaces.' });
+      try { if (clearing) await store.clear(); else await store.set(key); }
+      catch { return sendJSON(res, 500, { error: 'Could not update the encrypted API key.' }); }
+      if (openai) storedOpenAIKey = key;
+      else { storedGroqKey = key; companion = makeCompanion(); }
       return sendJSON(res, 200, { ok: true });
     }
     if (method === 'GET' && url === '/api/setup') return sendJSON(res, 200, setupPayload());
@@ -435,6 +441,25 @@ function createApp({
     const denied = guard.check(req, { requireToken: isApi });
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
     await keyReady; // the saved key is loaded before anything can start the camera
+    if (method === 'POST' && (url === '/api/voice/realtime' || url === '/api/voice/realtime/activity')) {
+      const key = realtimeKey();
+      if (demo || !key) return sendJSON(res, 409, { error: demo ? 'Use real mode for live voice.' : 'Add an OpenAI key in API Keys.' });
+      if (url.endsWith('/activity')) {
+        if (consent.has('sensing') && consent.has('aiSharing') && !paused) wake('voice_chat').catch(() => {});
+        return sendJSON(res, 200, { ok: true });
+      }
+      const { sdp } = await readBody(req);
+      if (typeof sdp !== 'string' || !sdp.startsWith('v=0') || sdp.length > 60000) return sendJSON(res, 400, { error: 'Invalid voice connection offer.' });
+      const cancel = new AbortController();
+      res.once('close', () => cancel.abort());
+      try {
+        const result = await realtimeCall(key, sdp, AbortSignal.any([cancel.signal, AbortSignal.timeout(25000)]));
+        return sendJSON(res, 200, result);
+      } catch (error) {
+        if (!res.destroyed) return sendJSON(res, 502, { error: error.message || 'Could not connect live voice.' });
+        return;
+      }
+    }
     if (method === 'POST' && url.startsWith('/api/voice/')) {
       if (demo) return sendJSON(res, 409, { error: 'Open Attune in real mode to use Groq voice.' });
       const key = desktop ? storedGroqKey : groqKey();

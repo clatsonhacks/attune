@@ -1,181 +1,193 @@
 'use strict';
 
-// One microphone turn at a time. Ending or interrupting a turn invalidates every pending callback.
+// The microphone and speaker share one WebRTC call across every turn.
+// OpenAI's server VAD handles speech boundaries, response cancellation and playout truncation.
 (() => {
-  const toggle = $('voiceToggle'), action = $('voiceTurn'), status = $('voiceStatus');
-  const mic = $('voiceMic');
-  let turn = null, context = null;
-
-  async function listMics(t) {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    if (turn !== t) return;
-    const selected = mic.value;
-    mic.replaceChildren(new Option('Default microphone', ''));
-    for (const device of devices.filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default')) {
-      mic.add(new Option(device.label || 'Microphone ' + mic.length, device.deviceId));
-    }
-    mic.value = selected;
-    mic.hidden = mic.length < 2;
-  }
-
-  function closeMic(t) {
-    clearInterval(t.timer);
-    if (t.recorder?.state === 'recording') t.recorder.stop();
-    t.stream?.getTracks().forEach(track => track.stop());
-    t.input?.disconnect();
-    t.analyser?.disconnect();
-  }
+  const toggle = $('voiceToggle'), mic = $('voiceMic'), playback = $('voicePlayback'), status = $('voiceStatus');
+  let active = null, latestCue = '';
 
   function stop(message = '') {
-    const t = turn;
-    turn = null;
-    if (t) {
-      t.cancel.abort();
-      closeMic(t);
-      t.player?.stop();
+    const call = active;
+    active = null;
+    if (call) {
+      clearTimeout(call.timeout);
+      call.abort.abort();
+      call.stream?.getTracks().forEach(track => track.stop());
+      call.channel?.close();
+      call.peer?.close();
+      call.audio.pause();
+      call.audio.srcObject = null;
     }
-    if (context) { context.close().catch(() => {}); context = null; }
-    toggle.textContent = 'Groq voice';
-    action.hidden = mic.hidden = true;
+    toggle.textContent = 'Start live voice';
+    playback.hidden = mic.hidden = true;
     status.textContent = message;
   }
 
-  function check(t) { t.cancel.signal.throwIfAborted(); }
+  function updateGuidance(call, cue) {
+    if (call !== active || call.channel?.readyState !== 'open' || call.lastCue === cue) return;
+    const instructions = call.base + (cue ? '\nApproved pacing cue: ' + cue : '');
+    call.channel.send(JSON.stringify({ type: 'session.update', session: { type: 'realtime', instructions } }));
+    call.lastCue = cue;
+  }
+  document.addEventListener('attune-guidance', e => {
+    latestCue = e.detail;
+    if (active) updateGuidance(active, latestCue);
+  });
 
-  async function request(t, route, body) {
-    check(t);
-    const binary = body instanceof Blob;
-    const r = await fetch('/api/voice/' + route, {
-      method: 'POST', headers: { 'x-attune-token': TOKEN, 'content-type': binary ? body.type : 'application/json' },
-      body: binary ? body : JSON.stringify(body), signal: t.cancel.signal,
-    });
-    if (!r.ok) {
-      const error = await r.json().catch(() => ({}));
-      throw new Error(error.errorText || error.error || 'Voice request failed. Try again or use text chat.');
-    }
-    return r;
+  async function play(call) {
+    try { await call.audio.play(); if (active === call) playback.hidden = true; }
+    catch { if (active === call) playback.hidden = false; }
+  }
+  playback.onclick = () => { if (active) play(active); };
+
+  function activity(call) {
+    api('/api/voice/realtime/activity', {}).then(result => {
+      if (active === call && !result.ok) stop(result.error || 'Live voice disconnected.');
+    }).catch(() => { if (active === call) stop('Attune disconnected. Start live voice to reconnect.'); });
   }
 
-  function* segments(text) {
-    let rest = text.trim();
-    while (rest.length > 199) {
-      const space = rest.lastIndexOf(' ', 199);
-      const end = space > 0 ? space : 198;
-      yield rest.slice(0, end);
-      rest = rest.slice(end).trimStart();
-    }
-    if (rest) yield rest;
-  }
-
-  async function finish(t, blob) {
-    try {
-      check(t);
-      status.textContent = 'Transcribing…';
-      action.textContent = 'Interrupt';
-      const { text } = await (await request(t, 'transcribe', blob)).json();
-      check(t);
-      if (!text) throw new Error('No speech recognized. Try again.');
-      addMsg(text, 'user');
-      status.textContent = 'Thinking…';
-      const response = await (await request(t, 'reply', { text })).json();
-      check(t);
-      addMsg(response.reply, 'bot', { by: response.usedBody, instruction: response.vitalsInstruction });
-      status.textContent = 'Speaking…';
-      for (const part of segments(response.reply)) {
-        const data = await (await request(t, 'speak', { text: part })).arrayBuffer();
-        check(t);
-        const sound = await context.decodeAudioData(data);
-        check(t);
-        const player = context.createBufferSource();
-        player.buffer = sound;
-        player.connect(context.destination);
-        t.player = player;
-        await new Promise(resolve => { player.onended = resolve; player.start(); });
-        player.disconnect();
-        t.player = null;
-        check(t);
+  function handleEvent(call, data) {
+    if (call !== active) return;
+    let e;
+    try { e = JSON.parse(data); } catch { return; }
+    switch (e.type) {
+      case 'session.updated': {
+        const instructions = e.session?.instructions || '';
+        call.confirmedCue = instructions.startsWith(call.base + '\nApproved pacing cue: ')
+          ? instructions.slice((call.base + '\nApproved pacing cue: ').length) : null;
+        break;
       }
-      beginTurn();
-    } catch (error) { if (turn === t) stop(error.message); }
+      case 'input_audio_buffer.speech_started':
+        status.textContent = 'Hearing you…';
+        activity(call);
+        break;
+      case 'input_audio_buffer.speech_stopped':
+        status.textContent = 'Thinking…';
+        break;
+      case 'input_audio_buffer.committed':
+        call.userBubbles.set(e.item_id, addMsg('…', 'user'));
+        break;
+      case 'conversation.item.input_audio_transcription.completed':
+      case 'conversation.item.input_audio_transcription.failed': {
+        const bubble = call.userBubbles.get(e.item_id);
+        const text = e.transcript?.trim() || 'Voice turn (transcript unavailable)';
+        if (bubble) bubble.textContent = text; else addMsg(text, 'user');
+        call.userBubbles.delete(e.item_id);
+        break;
+      }
+      case 'response.created':
+        call.cues.set(e.response.id, call.confirmedCue);
+        break;
+      case 'output_audio_buffer.started':
+        status.textContent = 'Speaking. You can interrupt.';
+        break;
+      case 'response.output_audio_transcript.done':
+        if (e.transcript?.trim()) addMsg(e.transcript.trim(), 'bot', { instruction: call.cues.get(e.response_id) || null });
+        break;
+      case 'response.done':
+        call.cues.delete(e.response?.id);
+        if (e.response?.status === 'failed') stop('Voice response failed. Check your OpenAI project, then reconnect.');
+        break;
+      case 'output_audio_buffer.stopped':
+        status.textContent = 'Listening…';
+        break;
+      case 'error':
+        stop('OpenAI reported a session error. Check Realtime access and reconnect.');
+        break;
+    }
   }
 
-  async function beginTurn() {
-    const t = { cancel: new AbortController() };
-    turn = t;
-    toggle.textContent = 'End voice';
-    action.hidden = true;
+  async function microphone(device) {
+    return navigator.mediaDevices.getUserMedia({ video: false, audio: { echoCancellation: true,
+      ...(device ? { deviceId: { exact: device } } : {}) } });
+  }
+  function watchMic(call, stream) {
+    stream.getAudioTracks()[0].onended = () => {
+      if (active === call && call.stream === stream) stop('Microphone disconnected. Select a microphone and reconnect.');
+    };
+  }
+  mic.onchange = async () => {
+    const call = active;
+    if (!call?.sender) return;
+    mic.disabled = true;
+    let replacement;
+    try {
+      replacement = await microphone(mic.value);
+      if (active !== call) return;
+      await call.sender.replaceTrack(replacement.getAudioTracks()[0]);
+      if (active !== call) return;
+      call.stream.getTracks().forEach(track => track.stop());
+      call.stream = replacement;
+      watchMic(call, replacement);
+      replacement = null;
+    } catch { if (active === call) stop('Could not switch microphones. Start live voice to retry.'); }
+    finally { replacement?.getTracks().forEach(track => track.stop()); mic.disabled = false; }
+  };
+
+  async function start() {
+    if (active) return stop('Live voice ended.');
+    if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) return stop('Live voice requires a microphone and WebRTC.');
+    if (lastState?.mode === 'demo') return stop('Start Attune in real mode to use live voice.');
+    if (!setup.hasOpenAI) { switchView('keys'); $('openaiStatus').textContent = 'Add an OpenAI key to use live voice.'; return; }
+    if (!confirm('Start live voice with OpenAI? Your microphone streams continuously until you end the call. OpenAI API charges apply. If camera sensing and AI sharing are enabled, Attune can start sensing and share the current pacing cue.')) return;
+
+    const call = { abort: new AbortController(), audio: new Audio(), confirmedCue: null, userBubbles: new Map(), cues: new Map() };
+    active = call;
+    toggle.textContent = 'End live voice';
     status.textContent = 'Opening microphone…';
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, ...(mic.value ? { deviceId: { exact: mic.value } } : {}) }, video: false });
-      if (turn !== t) { stream.getTracks().forEach(track => track.stop()); return; }
-      t.stream = stream;
-      listMics(t).catch(() => {});
-      const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(x => MediaRecorder.isTypeSupported(x));
-      if (!type) throw new Error('This device cannot record a supported audio format.');
-      const recorder = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: 64000 });
-      t.recorder = recorder;
-      const chunks = [];
-      recorder.ondataavailable = e => { if (e.data.size && turn === t) chunks.push(e.data); };
-      recorder.onerror = () => { if (turn === t) stop('Microphone disconnected. Choose a microphone and start again.'); };
-      recorder.onstop = () => {
-        closeMic(t);
-        if (turn === t) finish(t, new Blob(chunks, { type }));
+      const stream = await microphone('');
+      if (call !== active) { stream.getTracks().forEach(track => track.stop()); return; }
+      call.stream = stream;
+      watchMic(call, stream);
+      status.textContent = 'Connecting…';
+      call.timeout = setTimeout(() => { if (active === call) stop('Voice connection timed out. Try again.'); }, 35000);
+      const peer = call.peer = new RTCPeerConnection();
+      const channel = call.channel = peer.createDataChannel('oai-events');
+      call.sender = peer.addTrack(stream.getAudioTracks()[0], stream);
+      peer.ontrack = e => {
+        if (active !== call) return;
+        call.audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+        play(call);
       };
-      t.input = context.createMediaStreamSource(stream);
-      t.analyser = context.createAnalyser();
-      t.analyser.fftSize = 1024;
-      t.input.connect(t.analyser);
-      stream.getAudioTracks()[0].onended = () => { if (turn === t) stop('Microphone disconnected. Start again to reconnect.'); };
-      recorder.start();
-      status.textContent = 'Listening… pause to send.';
-      action.textContent = 'Send now';
-      action.hidden = false;
-      const samples = new Float32Array(t.analyser.fftSize);
-      const started = performance.now();
-      let lastSpeech = 0;
-      t.timer = setInterval(() => {
-        t.analyser.getFloatTimeDomainData(samples);
-        let energy = 0;
-        for (const value of samples) energy += value * value;
-        const now = performance.now();
-        if (Math.sqrt(energy / samples.length) > 0.018) lastSpeech = now;
-        if (!lastSpeech && now - started > 15000) return stop('Voice ended after silence.');
-        if ((lastSpeech && now - lastSpeech > 1100) || now - started > 45000) closeMic(t);
-      }, 100);
+      peer.onconnectionstatechange = () => {
+        if (active === call && ['failed', 'disconnected'].includes(peer.connectionState)) stop('Voice disconnected. Start live voice to reconnect.');
+      };
+      channel.onmessage = e => handleEvent(call, e.data);
+      channel.onclose = () => { if (active === call) stop('Voice session ended.'); };
+      channel.onopen = () => {
+        if (active !== call) return;
+        clearTimeout(call.timeout);
+        status.textContent = 'Listening…';
+        updateGuidance(call, latestCue);
+        activity(call);
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+          if (active !== call) return;
+          mic.replaceChildren(new Option('Default microphone', ''));
+          for (const d of devices.filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default')) {
+            mic.add(new Option(d.label || 'Microphone ' + mic.length, d.deviceId));
+          }
+          mic.hidden = mic.length < 2;
+        }).catch(() => {});
+      };
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      const response = await fetch('/api/voice/realtime', { method: 'POST', signal: call.abort.signal,
+        headers: { 'content-type': 'application/json', 'x-attune-token': TOKEN }, body: JSON.stringify({ sdp: offer.sdp }) });
+      const result = await response.json();
+      if (active !== call) return;
+      if (!response.ok) throw new Error(result.error || 'Could not start live voice.');
+      call.base = result.instructions;
+      await peer.setRemoteDescription({ type: 'answer', sdp: result.sdp });
     } catch (error) {
-      if (turn === t) stop(error.name === 'NotAllowedError' ? 'Microphone access was denied. Check device permissions or use text chat.' : error.message);
+      if (call === active) stop(error.name === 'NotAllowedError' ? 'Microphone permission was denied.' : error.message);
     }
   }
 
-  toggle.onclick = async () => {
-    if (turn) return stop('Voice ended.');
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return stop('Microphone recording is unavailable here.');
-    if (lastState?.mode === 'demo') return stop('Use real mode and your Groq key for voice.');
-    if (!setup.hasGroq) { switchView('keys'); $('groqStatus').textContent = 'Add a Groq key to start voice chat.'; return; }
-    if (!confirm('Start voice chat? Your microphone audio, transcript and replies go to Groq using your API key. Voice listens again after each reply until you end it. Camera consent is separate.')) return;
-    try {
-      context = new AudioContext();
-      const ready = context.resume();
-      beginTurn();
-      await ready;
-    } catch { stop('Audio is unavailable. Check your output device.'); }
-  };
-  action.onclick = () => {
-    if (!turn) return;
-    if (turn.recorder?.state === 'recording') return closeMic(turn);
-    interrupt();
-  };
-  function interrupt() {
-    if (!turn) return;
-    const interrupted = turn;
-    turn = null;
-    interrupted.cancel.abort();
-    closeMic(interrupted);
-    interrupted.player?.stop();
-    beginTurn();
+  toggle.onclick = start;
+  for (const button of document.querySelectorAll('.navitem, #claudeVoiceSetup, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) {
+    button.addEventListener('click', () => stop());
   }
-  mic.onchange = interrupt;
-  for (const button of document.querySelectorAll('.navitem, #claudeVoiceSetup, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) button.addEventListener('click', () => stop());
   $('chatForm').addEventListener('submit', () => stop());
   document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
   window.addEventListener('pagehide', () => stop());
