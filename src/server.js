@@ -1,190 +1,119 @@
 'use strict';
 /*
- * Attune MCP connector — a local stdio MCP server for desktop clients and the ChatGPT tunnel client.
+ * Attune MCP connector — a thin stdio MCP client of the running Attune service.
  *
- * Consent is NOT an AI tool. The human grants it in the connector's own config (which an AI cannot
- * edit through these tools), e.g. in claude_desktop_config.json:
- *   "env": { "ATTUNE_CONSENT": "sensing,presage-ack,ai-sharing" }
- *     sensing      — camera + SmartSpectra may run
- *     presage-ack  — you have read the Presage processing disclosure (required for sensing)
- *     ai-sharing   — interpreted, number-free context may be returned to the AI
- *     memory       — interpretations may be stored locally and read back
+ * It has NO camera, sensing, SDK or consent code. The Attune service (npm run web, later the desktop app) is the only
+ * process that opens the camera and holds consent, purpose approvals, activity and memory. This connector finds the
+ * service through service.json in the per-user Attune data folder (re-read on every call, so a restarted service is
+ * picked up) and calls its local connector API on 127.0.0.1 with the token from that file.
  *
- * The camera starts lazily on the first get_body_context call and stops after ATTUNE_IDLE_MS
- * (default 2 min) without calls, so it never runs just because the host app is open.
+ *   Data folder: ATTUNE_DATA_DIR, else %APPDATA%\Attune · ~/Library/Application Support/Attune · $XDG_CONFIG_HOME/attune
+ *   (a demo service writes to its `demo` subfolder; that is tried second, or only with --demo).
  *
- * Purposes (lenses): get_body_context takes a purpose (companion, yoga, casual, …). The AI may only SUGGEST one;
- * the person approves which app may use which lens in Attune → Connectors (src/privacy/appApprovals.js, shared
- * with the web server through one absolute file and re-read on every call). An app with no approvals entry may
- * use the companion lens only. Every get_body_context call is recorded in the number-free activity log.
- * App identity: ATTUNE_APP_ID, else the MCP client's name, else claude-desktop (or chatgpt with --chatgpt).
+ * Consent and approvals are NOT AI tools: the person gives them in Attune. If the service is not running, every tool
+ * answers { state: 'attune_not_running', say: false } and nothing else happens.
  *
- * Tools: get_attune_status · get_body_context · list_purposes · record_correction · memory_get · memory_append · forget_me
- * Uses the real SmartSpectra SDK by default; ATTUNE_ADAPTER=mock (or --demo) runs on synthetic vitals.
+ * App identity: ATTUNE_APP_ID, else a slug of the MCP client's name, else claude-desktop (chatgpt with --chatgpt).
+ * Tools: get_attune_status · list_purposes · get_body_context · record_correction · memory_get · memory_append
+ * ChatGPT profile (--chatgpt): only the first three, app id chatgpt, strict approvals (every lens needs an explicit entry).
+ *
+ * Self-contained on purpose (only @modelcontextprotocol/sdk, zod and Node built-ins) so it can be packaged alone.
  */
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-// Desktop apps and tunnel clients can launch this script from a different working directory.
-if (require.main === module) {
-  try { process.loadEnvFile(); } catch {
-    try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch {}
-  }
+const APP_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const TOKEN = /^[0-9a-f]{64}$/;
+const TIMEOUT_MS = 3000;
+const NOT_RUNNING = Object.freeze({ state: 'attune_not_running', say: false, howToEnable: 'Open Attune and try again.' });
+const DEFAULT_PURPOSE = 'companion';
+const PURPOSE_HELP = '"companion" (Emotional companion), "yoga" (Yoga & breathwork), "casual" (Casual chat)';
+
+/** Same rules as src/paths.js dataDir (kept in sync by a test). */
+function dataDir({ demo = false, env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+  const p = platform === 'win32' ? path.win32 : path.posix;
+  let base;
+  if (env.ATTUNE_DATA_DIR) base = path.resolve(env.ATTUNE_DATA_DIR);
+  else if (platform === 'win32') base = p.join(env.APPDATA || p.join(home, 'AppData', 'Roaming'), 'Attune');
+  else if (platform === 'darwin') base = p.join(home, 'Library', 'Application Support', 'Attune');
+  else base = p.join(env.XDG_CONFIG_HOME || p.join(home, '.config'), 'attune');
+  return demo ? (env.ATTUNE_DATA_DIR ? path : p).join(base, 'demo') : base;
 }
-const { createSession } = require('./session');
-const { createMemory } = require('./memory');
-const { createAdapter, isDemo } = require('./adapter');
-const { createConsent, parseConsentString } = require('./privacy/consent');
-const { createSensing } = require('./sensing');
-const { createCapabilities } = require('./privacy/capabilities');
-const { createContextBridge } = require('./contextBridge');
-const { normalizeInsight } = require('./insights/normalizer');
-const { getLens, listLenses, DEFAULT_LENS } = require('./lenses');
-const { createAppApprovals, defaultAppsFile, slugAppId, isAppId, labelFor } = require('./privacy/appApprovals');
-const { createActivityLog, defaultActivityFile } = require('./activity');
 
-function createConnectorCore({
-  consentString = process.env.ATTUNE_CONSENT,
-  adapterFactory = () => createAdapter(),
-  memory = createMemory(),
-  idleMs = Number(process.env.ATTUNE_IDLE_MS) || 120000,
-  log = (m) => process.stderr.write(`[attune-sense] ${m}\n`),
-  consentHint = 'Set ATTUNE_CONSENT="sensing,presage-ack,ai-sharing" in the MCP client configuration.',
-  appId = process.env.ATTUNE_APP_ID, // fixed identity (if valid); otherwise clientName, then defaultAppId
-  clientName = () => null,           // MCP client's clientInfo.name, once known
-  defaultAppId = 'claude-desktop',
-  approvals = createAppApprovals(defaultAppsFile(isDemo())),
-  activity = createActivityLog(defaultActivityFile(isDemo())),
-} = {}) {
-  const requested = parseConsentString(consentString);
-  const simulated = isDemo();
-  const consent = createConsent();
-  const capabilities = createCapabilities({ consent });
-  const bridge = createContextBridge({ capabilities });
-  consent.onChange(() => bridge.onConsentChange());
-  memory.setMuted(!requested.memory);
-  // Sharing/memory scopes come from the human's config; sensing is granted lazily on first request.
-  consent.grant({ aiSharing: requested.aiSharing, memory: requested.memory });
+/** service.json files to try, in order. */
+function serviceFiles({ demoOnly = false, env = process.env } = {}) {
+  const real = path.join(dataDir({ env }), 'service.json');
+  const demo = path.join(dataDir({ env, demo: true }), 'service.json');
+  return demoOnly ? [demo] : [real, demo];
+}
 
-  /** Which app is asking. Resolved per call: the client name is only known after the MCP handshake. */
+/** Parse and validate one service.json, or null. */
+function readService(file) {
+  try {
+    const d = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    if (!d || d.version !== 1 || !Number.isInteger(d.port) || d.port < 1 || d.port > 65535 || typeof d.token !== 'string' || !TOKEN.test(d.token)) return null;
+    return { port: d.port, token: d.token };
+  } catch { return null; }
+}
+
+function slugAppId(name) {
+  const s = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40).replace(/-+$/, '');
+  return APP_ID.test(s) ? s : null;
+}
+
+/**
+ * The connector core: talks to the service, never throws.
+ * fetchFn / env are test hooks; clientName() returns the MCP client's name once the handshake is done.
+ */
+function createConnector({ env = process.env, demoOnly = false, chatgpt = false, clientName = () => null,
+  fetchFn = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+  const defaultAppId = chatgpt ? 'chatgpt' : 'claude-desktop';
+
   function currentApp() {
-    if (isAppId(appId)) return appId;
+    if (APP_ID.test(String(env.ATTUNE_APP_ID || ''))) return env.ATTUNE_APP_ID;
     let name = null;
     try { name = clientName(); } catch {}
     return slugAppId(name) || defaultAppId;
   }
-  const appName = (id) => { try { const a = approvals.get(id); if (a) return a.name; } catch {} return labelFor(id); };
-  function record(event) { try { activity.append(event); } catch {} }
-
-  let session = createSession({ simulatedSignals: simulated });
-  const sensing = createSensing({
-    adapterFactory,
-    consent,
-    log,
-    onStart: (gen) => {
-      session = createSession({ memory: requested.memory ? memory : null, simulatedSignals: simulated });
-      bridge.openSession(gen);
-    },
-    onSample: (sample, gen) => { session.ingest(sample); bridge.update(session.getApprovedContext(), gen); bridge.updateSnapshot(session.getNeutralSnapshot(), gen); },
-    onInsight: (insight, gen) => bridge.addInsight(normalizeInsight(insight, { requested: insight.requested }), gen),
-    onStop: () => bridge.closeSession(),
-  });
-
-  let idleTimer = null;
-  function touch() {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { consent.revoke(['sensing']); }, idleMs);
-    if (idleTimer.unref) idleTimer.unref();
+  function currentAppName() {
+    let name = null;
+    try { name = clientName(); } catch {}
+    return typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : undefined;
   }
 
-  const canSense = () => requested.sensing && requested.presageAck;
-  const canShare = () => requested.aiSharing;
-
-  function status() {
-    const s = sensing.status();
-    return {
-      sensingAllowed: canSense(),
-      aiSharingAllowed: canShare(),
-      memoryAllowed: requested.memory,
-      sensing: s.state,
-      ...(s.error ? { error: s.error } : {}),
-      howToEnable: canSense() && canShare() ? undefined
-        : consentHint,
-    };
-  }
-
-  /**
-   * get_body_context({ purpose }) — purpose is a lens id (default companion). The lens must be approved for
-   * this app by the person; the camera never starts for an unknown or unapproved purpose.
-   */
-  async function getBodyContext({ purpose } = {}) {
+  /** Call the service; returns its JSON, or NOT_RUNNING when no service answers. The token only ever goes to 127.0.0.1. */
+  async function call(method, route, payload) {
     const app = currentApp();
-    const lens = getLens(purpose == null || purpose === '' ? DEFAULT_LENS : String(purpose).slice(0, 60));
-    if (!canSense() || !canShare()) {
-      record({ kind: 'context', app, lens: lens ? lens.id : null, state: 'consent_required', say: false });
-      return { state: 'consent_required', say: false, ...status() };
-    }
-    if (!lens) {
-      record({ kind: 'unknown', app, lens: null, state: 'unknown_purpose', say: false });
-      return { state: 'unknown_purpose', say: false, availablePurposes: listLenses().map((l) => l.id) };
-    }
-    if (!approvals.isApproved(app, lens.id)) {
-      let wasPending = false;
+    for (const file of serviceFiles({ demoOnly, env })) {
+      const svc = readService(file);
+      if (!svc) continue;
+      let url = `http://127.0.0.1:${svc.port}/connector/v1/${route}`;
+      const init = { method, headers: { authorization: `Bearer ${svc.token}`, accept: 'application/json' }, redirect: 'error' };
+      if (method === 'GET') url += `?${new URLSearchParams({ app, ...(chatgpt ? { strict: '1' } : {}) })}`;
+      else {
+        init.headers['content-type'] = 'application/json';
+        init.body = JSON.stringify({ ...payload, app, ...(chatgpt ? { strict: true } : {}) });
+      }
       try {
-        wasPending = approvals.pending().some((p) => p.app === app && p.lens === lens.id);
-        approvals.recordRequest(app, lens.id);
-      } catch {}
-      record({ kind: wasPending ? 'denied' : 'request', app, lens: lens.id, state: 'purpose_not_approved', say: false });
-      return { state: 'purpose_not_approved', lens: lens.id, say: false,
-        howToEnable: `Open Attune → Connectors and allow ${appName(app)} to use ${lens.name}.` };
+        const res = await fetchFn(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+        if (res.status === 401 || res.status === 403) continue; // stale file from another run: try the next one
+        const json = await res.json();
+        if (json && typeof json === 'object') return json;
+      } catch { /* not running, timed out, or not Attune: try the next one */ }
     }
-    if (sensing.status().state !== 'active') {
-      consent.grant({ sensing: true, presageAck: true });
-      await sensing.settled();
-    }
-    touch();
-    if (sensing.status().state !== 'active') {
-      record({ kind: 'context', app, lens: lens.id, state: 'unavailable', say: false });
-      return { state: 'unavailable', say: false, error: sensing.status().error };
-    }
-    // A capability limited to the app's CURRENT approvals (re-read now), used for this one read only.
-    const cap = capabilities.issue({ scope: 'aiSharing', purpose: `mcp:${app}`, lenses: approvals.approvedLenses(app) });
-    let ctx;
-    try { ctx = bridge.getLensContext(cap, lens.id); } finally { capabilities.revoke(cap); } // immediate cache read
-    if (ctx.state === 'off') ctx = { ...ctx, state: 'starting' };
-    record({ kind: ctx.state === 'purpose_not_approved' ? 'denied' : 'context', app, lens: lens.id, state: ctx.state, say: !!ctx.say });
-    return ctx;
+    return { ...NOT_RUNNING };
   }
 
-  /** Read-only: the purposes this connector knows and whether the person approved each one for this app. */
-  function listPurposes() {
-    const app = currentApp();
-    let approved = [];
-    try { approved = approvals.approvedLenses(app); } catch {}
-    return { app, purposes: listLenses().map(({ id, name, description, sharesNumbers }) => ({ id, name, description, sharesNumbers, approved: approved.includes(id) })) };
-  }
-
-  function recordCorrection({ wasAccurate }) {
-    if (sensing.status().state !== 'active') return { ok: false, reason: 'sensing is not active' };
-    return session.recordCorrection({ wasAccurate });
-  }
-
-  function memoryGet() {
-    if (!requested.memory || !canShare()) return { memory: 'disabled', reason: 'memory and ai-sharing consent are both required' };
-    return memory.summary();
-  }
-
-  function memoryAppend({ note }) {
-    if (!requested.memory) return { ok: false, reason: 'memory consent is off' };
-    memory.append({ type: 'note', note: String(note).slice(0, 500) });
-    return { ok: true };
-  }
-
-  async function shutdown() {
-    clearTimeout(idleTimer);
-    await sensing.shutdown();
-  }
-
-  return { bridge, status, getBodyContext, listPurposes, appId: currentApp, recordCorrection, memoryGet, memoryAppend, forget: () => { memory.clear(); return { cleared: true }; }, shutdown, sensing };
+  return {
+    appId: currentApp,
+    status: () => call('GET', 'status'),
+    listPurposes: () => call('GET', 'purposes'),
+    getBodyContext: ({ purpose } = {}) => call('POST', 'context', { purpose: purpose == null ? undefined : String(purpose).slice(0, 60), appName: currentAppName() }),
+    recordCorrection: ({ wasAccurate }) => call('POST', 'correction', { wasAccurate: wasAccurate === true }),
+    memoryGet: () => call('GET', 'memory'),
+    memoryAppend: ({ note }) => call('POST', 'memory', { note: String(note == null ? '' : note).slice(0, 500) }),
+  };
 }
 
 async function main() {
@@ -195,18 +124,13 @@ async function main() {
   const chatgpt = process.argv.includes('--chatgpt');
   let server = null;
   const clientName = () => { const v = server && server.server.getClientVersion(); return v && v.name; };
-  const core = chatgpt ? createConnectorCore({
-    consentString: process.env.ATTUNE_CHATGPT_CONSENT === 'sensing,presage-ack,ai-sharing' ? process.env.ATTUNE_CHATGPT_CONSENT : '',
-    consentHint: 'Set ATTUNE_CHATGPT_CONSENT in the local tunnel client environment and restart the client.',
-    clientName, defaultAppId: 'chatgpt',
-  }) : createConnectorCore({ clientName });
+  const core = createConnector({ chatgpt, demoOnly: process.argv.includes('--demo'), clientName });
   const text = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] });
-  server = new McpServer({ name: 'attune-sense', version: '0.3.0' });
-  const purposeHelp = listLenses().map((l) => `"${l.id}" (${l.name})`).join(', ');
+  server = new McpServer({ name: 'attune-sense', version: '0.5.0' });
 
   server.registerTool('get_attune_status',
-    { description: 'Read-only: whether the user has allowed sensing / AI sharing / memory, and whether sensing is running.', inputSchema: {}, annotations: { readOnlyHint: true } },
-    async () => text(core.status()));
+    { description: 'Read-only: whether Attune is running, whether the user has allowed sensing / AI sharing / memory in Attune, whether the camera is running, and which purposes this app may use.', inputSchema: {}, annotations: { readOnlyHint: true } },
+    async () => text(await core.status()));
 
   server.registerTool('get_body_context',
     {
@@ -215,10 +139,10 @@ async function main() {
         'breathing or yoga practice → "yoga", light conversation → "casual". Returns {lens, state, say, directive, ' +
         'suggestedUtterance, confidence} — interpreted guidance, never measurements unless that purpose explicitly ' +
         'shares them. If say=true let directive shape your tone (be tentative, invite correction). If state is "unclear", ' +
-        '"consent_required" or "unavailable", say nothing about the body. You cannot approve a purpose yourself: if state ' +
+        '"starting", "paused", "consent_required", "unavailable" or "attune_not_running", say nothing about the body. You cannot approve a purpose yourself: if state ' +
         'is "purpose_not_approved", tell the user they can allow it in Attune (see howToEnable) and carry on without it; ' +
         'if "unknown_purpose", pick one of availablePurposes. Non-medical; not a diagnosis; not lie-detection.',
-      inputSchema: { purpose: z.string().max(60).optional().describe(`Lens id for this task. Known: ${purposeHelp}. Default "${DEFAULT_LENS}".`) },
+      inputSchema: { purpose: z.string().max(60).optional().describe(`Lens id for this task. Known: ${PURPOSE_HELP}. Default "${DEFAULT_PURPOSE}".`) },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async ({ purpose } = {}) => text(await core.getBodyContext({ purpose })));
@@ -232,30 +156,25 @@ async function main() {
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
-    async () => text(core.listPurposes()));
+    async () => text(await core.listPurposes()));
 
   if (!chatgpt) {
     server.registerTool('record_correction',
       { description: 'The user corrected the read (e.g. "I\'m fine"). Pass wasAccurate=false to make it more conservative.', inputSchema: { wasAccurate: z.boolean() } },
-      async ({ wasAccurate }) => text(core.recordCorrection({ wasAccurate })));
+      async ({ wasAccurate }) => text(await core.recordCorrection({ wasAccurate })));
 
     server.registerTool('memory_get',
-      { description: 'Compact cross-session summary (interpretations only). Only available if the user enabled memory.', inputSchema: {} },
-      async () => text(core.memoryGet()));
+      { description: 'Compact cross-session summary (interpretations only). Only available if the user enabled memory and AI sharing in Attune.', inputSchema: {} },
+      async () => text(await core.memoryGet()));
 
     server.registerTool('memory_append',
-      { description: 'Note what mattered this session (no raw signals). Only works if the user enabled memory.', inputSchema: { note: z.string() } },
-      async ({ note }) => text(core.memoryAppend({ note })));
-
-    server.registerTool('forget_me',
-      { description: 'Delete all local Attune memory for this user.', inputSchema: {} },
-      async () => text(core.forget()));
+      { description: 'Note what mattered this session (no raw signals). Only works if the user enabled memory in Attune.', inputSchema: { note: z.string().max(500) } },
+      async ({ note }) => text(await core.memoryAppend({ note })));
   }
 
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await core.shutdown(); process.exit(0); });
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
   await server.connect(new StdioServerTransport());
-  const st = core.status();
-  process.stderr.write(`[attune-sense] MCP connector on stdio — sensing ${st.sensingAllowed ? 'allowed (starts on first request)' : 'not allowed'}, AI sharing ${st.aiSharingAllowed ? 'on' : 'off'}.\n`);
+  process.stderr.write(`[attune-sense] MCP connector on stdio${chatgpt ? ' (ChatGPT profile)' : ''} — talks to the running Attune app.\n`);
 }
 
 if (require.main === module) {
@@ -265,4 +184,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createConnectorCore };
+module.exports = { createConnector, dataDir, serviceFiles, readService, slugAppId, NOT_RUNNING };
