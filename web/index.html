@@ -34,7 +34,6 @@
       <header class="topbar">
         <div class="tleft">
           <div class="htitle" id="htitle">Companion</div>
-          <button class="mini home-toggle" id="homeToggle" type="button">Show sensing</button>
         </div>
         <div class="controls">
           <span id="camPill" class="pill cam-pill" hidden title="The camera is on"><span class="rec"></span>Camera on</span>
@@ -98,7 +97,7 @@
               <div class="breath-cue" id="breathCue" hidden aria-live="off"></div>
               <div class="cam-hint" id="camHint" hidden></div>
             </div>
-            <div id="homeSignals"><div class="signals" id="signals"></div></div>
+            <div id="homeSignals"><span class="fineprint" id="emptySignals">No sensor readings yet</span><div class="signals" id="signals"></div></div>
             <button type="button" class="mini" id="openSensing">Sensing details</button>
             <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Allow camera sensing</span></button>
             <button class="linkish" id="forgetConsent" hidden>Forget camera permission</button>

@@ -95,10 +95,6 @@ function openSensing() {
 }
 $('openSensing').onclick = $('readInstruction').onclick = openSensing;
 $('backFromSensing').onclick = () => { switchView('home'); $('openSensing').focus(); };
-$('homeToggle').onclick = () => {
-  const show = $('view-home').classList.toggle('show-sensing');
-  $('homeToggle').textContent = show ? 'Show chat' : 'Show sensing';
-};
 /* ---------- Private mode ---------- */
 $('incognito').onchange = async (e) => {
   const r = await api('/api/incognito', { on: e.target.checked });
@@ -666,6 +662,7 @@ let lastSignals = [], selectedSignal = null;
 function renderSignals(sigs) {
   lastSignals = sigs || [];
   const c = $('signals');
+  $('emptySignals').hidden = lastSignals.length > 0;
   if (!lastSignals.length) { c.innerHTML = ''; c.dataset.ids = ''; $('signalDetail').hidden = true; updateSlot(); return; }
   // Build the tiles once, then only patch text/classes so icons and dot animations don't restart every poll.
   const ids = lastSignals.map((s) => s.id).join(',');

@@ -477,7 +477,6 @@ body:has(#view-home:not([hidden])) { overflow:hidden; }
 #view-home .conversation { height:100%; min-width:0; }
 #homeSignals { width:100%; }
 #openSensing { margin:8px 0; }
-#homeToggle { display:none; }
 .sensing-info { display:grid; gap:10px; margin-top:16px; }
 #detailSignals .signals { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); }
 .vitals-instruction p { max-height:none; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
@@ -499,16 +498,38 @@ body:has(#view-home:not([hidden])) { overflow:hidden; }
   .app:has(#view-home:not([hidden])) .navitem { font-size:12px; gap:3px; padding:6px 3px; }
   .app:has(#view-home:not([hidden])) .topbar { margin:0 0 5px; flex-wrap:wrap; }
   .app:has(#view-home:not([hidden])) .htitle { font-size:16.5px; }
-  .app:has(#view-home:not([hidden])) #homeToggle { display:inline-block; }
-  #view-home .stage { grid-template-columns:minmax(0,1fr); gap:0; }
-  #view-home:not(.show-sensing) .presence, #view-home.show-sensing .conversation { display:none; }
+  #view-home .stage { grid-template-columns:minmax(220px,32%) minmax(0,1fr); gap:6px; }
   #view-home .conversation { padding:10px; }
   #view-home .conv-head { flex-wrap:wrap; gap:4px; }
 }
 @media (max-height:590px) {
-  #view-home .orb-wrap, #homeSignals, #view-home #policyNote { display:none; }
+  #view-home .orb-wrap, #view-home .mascot .muse { height:54px; }
+  #view-home .cta, #view-home #openSensing { margin:3px 0; padding:4px 8px; }
+  #view-home #policyNote { display:none; }
   #view-home .conversation { padding:8px; }
   #view-home .conv-head, #view-home .voice-feedback, #view-home .hint { margin:2px 0; }
 }
 
 #view-home .composer input { min-width:0; }
+
+@media (max-width:650px) {
+  #view-home .stage { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  #view-home .presence { display:flex; flex-flow:row wrap; justify-content:center; align-content:start; gap:3px 8px; padding:6px; }
+  #view-home .orb-wrap, #view-home .mascot .muse { height:48px; }
+  #view-home .mascot .aura { width:55px; height:55px; }
+  #view-home .readout { width:auto; max-width:75%; text-align:left; margin:0; }
+  #view-home .state-word { height:auto; font-size:19px; }
+  #view-home .readout .sub { margin:0; }
+  #view-home .signals { grid-template-columns:repeat(4,minmax(0,1fr)); gap:3px; margin:0; }
+  #view-home .sig { height:36px; padding:2px 4px; gap:0; }
+  #view-home .sig .ic { display:none; }
+  #view-home .sig .shead { font-size:11px; gap:2px; }
+  #view-home .sig .sval { font-size:12px; }
+  #view-home #consentBtn, #view-home #openSensing, #view-home #forgetConsent { width:auto; margin:0; padding:3px 6px; font-size:12px; }
+  #view-home #policyNote { display:none; }
+}
+@media (max-width:650px) and (max-height:700px), (max-height:500px) {
+  #view-home #hint { display:none; }
+  #view-home .vitals-instruction p { -webkit-line-clamp:2; }
+  #view-home .vitals-instruction { margin-bottom:4px; padding:4px 8px; }
+}
