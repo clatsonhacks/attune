@@ -97,6 +97,17 @@ test('worker environment excludes unrelated secrets', () => {
   assert.ok(!('SMARTSPECTRA_API_KEY' in buildWorkerEnv('mock', {}, { SMARTSPECTRA_API_KEY: 'k' })));
 });
 
+test('worker env: an explicit key overrides the environment; Electron gets ELECTRON_RUN_AS_NODE', () => {
+  const env = buildWorkerEnv('smartspectra', { SMARTSPECTRA_API_KEY: 'stored' }, { SMARTSPECTRA_API_KEY: 'dotenv', PATH: '/bin' }, { node: '24' });
+  assert.strictEqual(env.SMARTSPECTRA_API_KEY, 'stored');
+  assert.ok(!('ELECTRON_RUN_AS_NODE' in env));
+  const capi = 'C:\\app\\resources\\smartspectra\\smartspectra_capi.dll';
+  const e2 = buildWorkerEnv('mock', {}, { SMARTSPECTRA_CAPI_PATH: capi, ELECTRON_RUN_AS_NODE: '0', OTHER: 'x' }, { electron: '45.4.1' });
+  assert.strictEqual(e2.ELECTRON_RUN_AS_NODE, '1');
+  assert.strictEqual(e2.SMARTSPECTRA_CAPI_PATH, capi);
+  assert.ok(!('OTHER' in e2));
+});
+
 test('app restart remembers permission but never turns the camera on by itself', async (t) => {
   const mem = tempMemory();
   const cs = tempConsentStore();

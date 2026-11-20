@@ -30,15 +30,25 @@ const NOT_RUNNING = Object.freeze({ state: 'attune_not_running', say: false, how
 const DEFAULT_PURPOSE = 'companion';
 const PURPOSE_HELP = '"companion" (Emotional companion), "yoga" (Yoga & breathwork), "casual" (Casual chat)';
 
+/**
+ * ATTUNE_DATA_DIR when it names a folder, else null. Empty or blank values and unsubstituted placeholders such as
+ * "${user_config.data_dir}" (a Claude Desktop extension whose optional setting was left empty) count as unset.
+ */
+function customDataDir(env = process.env) {
+  const v = typeof env.ATTUNE_DATA_DIR === 'string' ? env.ATTUNE_DATA_DIR.trim() : '';
+  return v && !v.includes('${') ? v : null;
+}
+
 /** Same rules as src/paths.js dataDir (kept in sync by a test). */
 function dataDir({ demo = false, env = process.env, platform = process.platform, home = os.homedir() } = {}) {
   const p = platform === 'win32' ? path.win32 : path.posix;
+  const custom = customDataDir(env);
   let base;
-  if (env.ATTUNE_DATA_DIR) base = path.resolve(env.ATTUNE_DATA_DIR);
+  if (custom) base = path.resolve(custom);
   else if (platform === 'win32') base = p.join(env.APPDATA || p.join(home, 'AppData', 'Roaming'), 'Attune');
   else if (platform === 'darwin') base = p.join(home, 'Library', 'Application Support', 'Attune');
   else base = p.join(env.XDG_CONFIG_HOME || p.join(home, '.config'), 'attune');
-  return demo ? (env.ATTUNE_DATA_DIR ? path : p).join(base, 'demo') : base;
+  return demo ? (custom ? path : p).join(base, 'demo') : base;
 }
 
 /** service.json files to try, in order. */
@@ -184,4 +194,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createConnector, dataDir, serviceFiles, readService, slugAppId, NOT_RUNNING };
+module.exports = { createConnector, dataDir, customDataDir, serviceFiles, readService, slugAppId, NOT_RUNNING };

@@ -87,6 +87,36 @@ test('connector data folder matches the service (paths.dataDir) on every OS', ()
   assert.deepStrictEqual(connector.serviceFiles({ env, demoOnly: true }), [path.join(env.ATTUNE_DATA_DIR, 'demo', 'service.json')]);
 });
 
+test('an empty or unsubstituted ATTUNE_DATA_DIR (extension setting left blank) counts as unset', () => {
+  const win = { platform: 'win32', home: 'C:\\Users\\u' };
+  const expected = 'C:\\Users\\u\\AppData\\Roaming\\Attune';
+  for (const v of ['', '   ', '${user_config.data_dir}', ' ${user_config.data_dir} ', '${HOME}/x']) {
+    assert.strictEqual(connector.customDataDir({ ATTUNE_DATA_DIR: v }), null, JSON.stringify(v));
+    for (const demo of [false, true]) {
+      const env = { ATTUNE_DATA_DIR: v };
+      assert.strictEqual(connector.dataDir({ ...win, env, demo }), demo ? `${expected}\\demo` : expected, JSON.stringify(v));
+      assert.strictEqual(paths.dataDir({ ...win, env, demo }), connector.dataDir({ ...win, env, demo }), JSON.stringify(v));
+    }
+  }
+  const real = path.join(os.tmpdir(), 'attune-x');
+  assert.strictEqual(connector.customDataDir({ ATTUNE_DATA_DIR: real }), real);
+  assert.strictEqual(connector.dataDir({ env: { ATTUNE_DATA_DIR: ` ${real} ` } }), path.resolve(real));
+  assert.strictEqual(paths.customDataDir({ ATTUNE_DATA_DIR: '${user_config.data_dir}' }), null);
+});
+
+test('the connector process with an unsubstituted ATTUNE_DATA_DIR uses the default folder, not a "${…}" folder', async (t) => {
+  // Point the default folder at a temp dir (APPDATA / HOME / XDG) so nothing touches the real per-user folder.
+  const home = tempDataDir(t);
+  const env = { ATTUNE_DATA_DIR: '${user_config.data_dir}', APPDATA: home, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home };
+  const defaultDir = connector.dataDir({ env: { APPDATA: home, XDG_CONFIG_HOME: home }, home });
+  fs.mkdirSync(defaultDir, { recursive: true });
+  await startService(t, defaultDir);
+  const { call } = await stdio(t, home, { env, clientName: 'Claude Desktop' });
+  const status = await call('get_attune_status');
+  assert.strictEqual(status.attune, 'running', JSON.stringify(status));
+  assert.strictEqual(status.app, 'claude-desktop');
+});
+
 test('service not running (or a stale/garbled service.json) → attune_not_running from every tool, no crash', async (t) => {
   const dataDir = tempDataDir(t);
   const { call, tools } = await stdio(t, dataDir);

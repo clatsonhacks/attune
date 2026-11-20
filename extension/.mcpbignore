@@ -1,0 +1,7 @@
+# Only manifest.json, icon.png, package.json, server/index.js and production node_modules go into attune.mcpb.
+icon.svg
+README*
+*.md
+test/
+tests/
+node_modules/.package-lock.json

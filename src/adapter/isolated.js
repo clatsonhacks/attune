@@ -50,10 +50,16 @@ function sanitizeInsight(i) {
   };
 }
 
-/** The worker's whole environment: an allowlist plus, for the real SDK, its API key. Nothing else. */
-function buildWorkerEnv(kind, extra = {}, source = process.env) {
+/**
+ * The worker's whole environment: an allowlist plus, for the real SDK, its API key. Nothing else.
+ * Under Electron (the desktop app) process.execPath is the Electron binary, so the fork needs
+ * ELECTRON_RUN_AS_NODE=1 to run worker.js as plain Node. SMARTSPECTRA_CAPI_PATH (allowlisted) is how the
+ * packaged app points the SDK at its bundled runtime outside the asar archive.
+ */
+function buildWorkerEnv(kind, extra = {}, source = process.env, versions = process.versions) {
   const env = { ATTUNE_WORKER_ADAPTER: kind };
   for (const k of ENV_ALLOW) if (source[k] != null) env[k] = source[k];
+  if (versions && versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
   if (kind === 'smartspectra') env.SMARTSPECTRA_API_KEY = source.SMARTSPECTRA_API_KEY || '';
   return Object.assign(env, extra);
 }

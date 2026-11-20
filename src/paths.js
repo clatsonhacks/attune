@@ -28,15 +28,25 @@ const LEGACY = Object.freeze({
   activity: ['.attune-activity.jsonl', '.attune-demo-activity.jsonl'],
 });
 
+/**
+ * ATTUNE_DATA_DIR when it names a folder, else null. Empty or blank values and unsubstituted placeholders such as
+ * "${user_config.data_dir}" (a Claude Desktop extension whose optional setting was left empty) count as unset.
+ */
+function customDataDir(env = process.env) {
+  const v = typeof env.ATTUNE_DATA_DIR === 'string' ? env.ATTUNE_DATA_DIR.trim() : '';
+  return v && !v.includes('${') ? v : null;
+}
+
 /** The per-user Attune folder (pure: nothing is created). */
 function dataDir({ demo = false, env = process.env, platform = process.platform, home = os.homedir() } = {}) {
   const p = platform === 'win32' ? path.win32 : path.posix;
+  const custom = customDataDir(env);
   let base;
-  if (env.ATTUNE_DATA_DIR) base = path.resolve(env.ATTUNE_DATA_DIR);
+  if (custom) base = path.resolve(custom);
   else if (platform === 'win32') base = p.join(env.APPDATA || p.join(home, 'AppData', 'Roaming'), 'Attune');
   else if (platform === 'darwin') base = p.join(home, 'Library', 'Application Support', 'Attune');
   else base = p.join(env.XDG_CONFIG_HOME || p.join(home, '.config'), 'attune');
-  return demo ? (env.ATTUNE_DATA_DIR ? path : p).join(base, 'demo') : base;
+  return demo ? (custom ? path : p).join(base, 'demo') : base;
 }
 
 /** Create a folder (and parents) readable by this user only where the OS supports it. */
@@ -81,7 +91,7 @@ function storeFile(kind, { demo = false, env = process.env, log = defaultLog, le
   if (!FILES[kind]) throw new Error(`unknown store file: ${kind}`);
   const dir = ensureDir(dataDir({ demo, env }));
   const file = path.join(dir, FILES[kind]);
-  if (!env.ATTUNE_DATA_DIR && LEGACY[kind]) migrateLegacy(kind, { demo, target: file, log, ...(legacyDirs ? { legacyDirs } : {}) });
+  if (!customDataDir(env) && LEGACY[kind]) migrateLegacy(kind, { demo, target: file, log, ...(legacyDirs ? { legacyDirs } : {}) });
   return file;
 }
 
@@ -104,4 +114,4 @@ function writeFileAtomic(file, data, { mode = 0o600 } = {}) {
   }
 }
 
-module.exports = { dataDir, ensureDir, storeFile, migrateLegacy, writeFileAtomic, FILES, LEGACY, REPO_ROOT };
+module.exports = { dataDir, customDataDir, ensureDir, storeFile, migrateLegacy, writeFileAtomic, FILES, LEGACY, REPO_ROOT };
