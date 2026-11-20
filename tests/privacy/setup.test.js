@@ -34,7 +34,7 @@ function fakeKeyStore(initial = null, { failSet = false } = {}) {
 
 const KEY = 'abcdEFGH1234ijklMNOP5678';
 
-async function boot(t, { keyStore, demo = false } = {}) {
+async function boot(t, { keyStore, groqStore, demo = false } = {}) {
   const port = 30000 + Math.floor(Math.random() * 20000);
   const mem = tempMemory();
   const cs = tempConsentStore();
@@ -44,7 +44,7 @@ async function boot(t, { keyStore, demo = false } = {}) {
   const restarter = { supported: true, async restart() { restarts.push(true); return { ok: true }; } };
   const made = [];
   const makeAdapter = (opts) => { made.push(opts); return { name: 'fake', start() {}, async stop() {} }; };
-  const app = createApp({ port, demo, keyStore, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
+  const app = createApp({ port, demo, keyStore, groqStore, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
     activity: apps.activity, serviceFile: null, log: (m) => logs.push(m), reply: async () => ({ reply: 'ok' }) });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
   t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); apps.cleanup(); });
@@ -150,4 +150,27 @@ test('demo refuses Claude restart', async (t) => {
   const { api, restarts } = await boot(t, { demo: true });
   assert.equal((await api('/api/connectors/claude/restart', { confirmed: true })).status, 403);
   assert.equal(restarts.length, 0);
+});
+
+test('desktop Groq key is independent of camera and environment keys', async (t) => {
+  const previous = process.env.GROQ_API_KEY;
+  process.env.GROQ_API_KEY = 'ambient-test-key';
+  t.after(() => { process.env.GROQ_API_KEY = previous; });
+  const camera = fakeKeyStore(KEY), groq = fakeKeyStore();
+  const { api, port, logs } = await boot(t, { keyStore: camera, groqStore: groq });
+  assert.equal((await api('/api/state')).json.ai.connected, false);
+  assert.equal((await request(port, { path: '/api/setup/groq', method: 'POST', body: { key: KEY } })).status, 401);
+  assert.equal((await api('/api/setup/groq', { key: 'short' })).status, 400);
+  assert.equal((await api('/api/setup/groq', { key: KEY })).json.ok, true);
+  const settings = (await api('/api/setup/keys')).json;
+  assert.equal(settings.hasGroq, true);
+  assert.equal(settings.needsKey, false);
+  assert.equal((await api('/api/state')).json.ai.connected, true);
+  assert.equal(JSON.stringify(settings).includes(KEY), false);
+  assert.ok(!logs.some((line) => line.includes(KEY)));
+  assert.equal(groq.value, KEY);
+  await api('/api/setup/groq/clear', {});
+  assert.equal(groq.value, null);
+  assert.equal(camera.value, KEY);
+  assert.equal((await api('/api/state')).json.ai.connected, false);
 });

@@ -3,8 +3,23 @@
 Attune turns contactless vitals (Presage SmartSpectra) into **behavioral nudges for an AI, not numbers**, and
 ships as a **local MCP connector** for Claude Desktop, ChatGPT via Secure MCP Tunnel, and other stdio clients.
 
-> Prototype. No secrets committed; use `.env`. Roadmap: [docs/ATTUNE_IMPLEMENTATION_PLAN.md](docs/ATTUNE_IMPLEMENTATION_PLAN.md) ·
+> Prototype. Desktop API keys are stored encrypted on your computer. Roadmap: [docs/ATTUNE_IMPLEMENTATION_PLAN.md](docs/ATTUNE_IMPLEMENTATION_PLAN.md) ·
 > how data moves: [docs/DATA_FLOW.md](docs/DATA_FLOW.md) · threats: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
+## Try Attune from GitHub
+
+Install Git and Node.js 26 (with npm), then run these commands in a terminal:
+
+```sh
+git clone https://github.com/clatsonhacks/attune.git
+cd attune
+npm ci
+npm start
+```
+
+On first launch, **API Keys** asks which features you want to enable. Add your own **Groq** key for the built-in chat companion and a **Presage SmartSpectra** key for camera sensing. Either can be skipped. Reopen **API Keys** at any time to save, replace, or remove a key. Changes apply immediately. ChatGPT and Claude use their own connections and do not need a Groq key. Camera access still requires consent.
+
+For a judge walkthrough with synthetic readings and scripted replies, run `npm run desktop:demo` instead of `npm start`. Demo uses a separate data folder and needs no accounts or keys. Quit any running Attune instance from the tray before switching modes. To try Claude installation from a fresh checkout, run `npm run build:extension`, then open **Connectors** in Attune. The Windows installer already includes the extension.
 
 **Consent once.** The first time, Attune asks for camera sensing and the Presage disclosure (AI sharing and
 memory are separate and optional). Your answer is remembered. After that the camera turns on when a chat starts
@@ -13,7 +28,7 @@ or when the AI asks for a reading, shows a *Camera on* badge, and turns off afte
 any permission. On-screen tips help you position yourself; if your chest isn't visible it falls back to
 face-only measurement.
 
-## Run it (real)
+## Run the web-only service (optional)
 ```bash
 npm install
 cp .env.example .env    # set SMARTSPECTRA_API_KEY and GROQ_API_KEY
@@ -114,6 +129,6 @@ M3 Context Bridge ✅ · next: M4 Attune Live voice.
 
 Run `npm ci` and `npm run build:desktop` on Windows x64. The build places the NSIS installer in `dist/desktop/` and the standalone Claude Desktop extension in `dist/attune.mcpb`. For development, run `npm run desktop:demo` for synthetic readings or `npm run desktop` for the setup flow. The desktop app uses port 3000 by default. Quit any existing Attune web service on that port before launching it.
 
-The first-run screen accepts a personal SmartSpectra key and stores it encrypted for the current Windows user. You can skip setup, or replace or remove the key later in the sidebar. Camera consent is a separate step. Closing the window leaves the service in the system tray. Choose **Quit Attune** there to shut it down.
+On first launch, API Keys offers separate fields for SmartSpectra and Groq. Both are optional and encrypted for the current Windows user. Camera consent is a separate step. Closing the window leaves the service in the system tray. Choose **Quit Attune** there to shut it down.
 
 In **Connectors**, select **Install in Claude**, open the downloaded extension in Claude Desktop and confirm installation. The connector uses the running Attune service. Set its allowed purposes in Attune and ask Claude to check Attune's status. The last-seen time records when Claude reaches the service. On Windows, **Restart Claude Desktop** reopens the Microsoft Store build after confirmation. Save drafts and finish active sessions first.

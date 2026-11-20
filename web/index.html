@@ -22,14 +22,10 @@
       <nav class="nav">
         <button class="navitem active" data-view="home"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Companion</button>
         <button class="navitem" data-view="memory"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-memory"/></svg>Memory</button>
+        <button class="navitem" data-view="keys"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>API Keys</button>
         <button class="navitem" data-view="connectors"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-connectors"/></svg>Connectors<span class="nbadge" id="pendingBadge" hidden></span></button>
         <button class="navitem" data-view="activity"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-history"/></svg>Activity</button>
       </nav>
-      <div class="side-key" id="keyRow" hidden>
-        <div class="sk-text"><b>Camera key</b><small id="keyState">Not set</small></div>
-        <div class="sk-actions"><button class="mini" id="keyReplace">Replace</button><button class="mini danger" id="keyRemove">Remove</button></div>
-        <span class="sk-status" id="keyStatus" role="status"></span>
-      </div>
       <div class="side-foot"><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>local-only</span><span class="pill soft"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-pulse"/></svg>non-medical</span></div>
     </aside>
 
@@ -156,6 +152,27 @@
         </div>
       </section>
 
+      <section class="view" id="view-keys" hidden>
+        <div class="connectors glass">
+          <div class="conn-head"><b>Set up your API keys</b><span id="keyHelp">Add your own keys for the features you want to use.</span></div>
+          <form class="key-card" id="cameraForm">
+            <h3>SmartSpectra</h3><p>Use your camera for real sensing. <a href="https://physiology.presagetech.com" target="_blank" rel="noopener noreferrer">Get a SmartSpectra key</a></p>
+            <label class="key-field"><span>SmartSpectra API key</span><input id="cameraInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" /></label>
+            <button class="mini" id="cameraSave" disabled>Save key</button>
+            <button class="mini danger" type="button" id="cameraRemove" hidden>Remove</button>
+            <span id="cameraStatus" role="status"></span>
+          </form>
+          <form class="key-card" id="groqForm">
+            <h3>Groq</h3><p>Chat with the built-in companion. ChatGPT and Claude use their own connections. <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Get a Groq key</a></p>
+            <label class="key-field"><span>Groq API key</span><input id="groqInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" /></label>
+            <button class="mini" id="groqSave" disabled>Save key</button>
+            <button class="mini danger" type="button" id="groqRemove" hidden>Remove</button>
+            <span id="groqStatus" role="status"></span>
+          </form>
+          <div class="dlg-actions"><button id="keysLater" class="mini">Back to companion</button><button class="mini" id="cameraCheck" hidden>Check camera</button></div>
+        </div>
+      </section>
+
       <!-- CONNECTORS -->
       <section class="view" id="view-connectors" hidden>
         <div class="pending-card glass" id="pendingCard" hidden>
@@ -207,30 +224,10 @@
 
   <!-- First run (desktop app): camera key, camera check, connect Claude -->
   <div class="dlg-back" id="setupDlg" hidden>
-    <div class="dlg glass setup" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
-      <ol class="setup-steps" id="setupSteps" aria-label="Setup steps">
-        <li data-step="1"><span class="sn">1</span>Your camera key</li>
-        <li data-step="2"><span class="sn">2</span>Camera check</li>
-        <li data-step="3"><span class="sn">3</span>Connect Claude</li>
-      </ol>
-      <section class="setup-step" id="setupStep1">
-        <h2 id="setupTitle" tabindex="-1">Your camera key</h2>
-        <p class="dlg-sub">Attune measures with <b>Presage SmartSpectra</b>, which needs a free developer key. Sign up at
-          <a href="https://physiology.presagetech.com" target="_blank" rel="noopener noreferrer">physiology.presagetech.com</a>,
-          copy your API key and paste it here.</p>
-        <label class="key-field" for="setupKey"><span>SmartSpectra API key</span>
-          <input id="setupKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" /></label>
-        <p class="dlg-note">The key is encrypted with your Windows sign-in and stays on this computer. Attune hands it only to its own camera process.</p>
-        <p class="fineprint warn" id="setupErr" role="alert" hidden></p>
-        <p class="fineprint" id="setupDemoNote" hidden>Demo mode uses simulated readings and does not need a key — you can skip this step.</p>
-        <div class="dlg-actions">
-          <button class="mini" id="setupSkip">Skip for now</button>
-          <button class="cta" id="setupSave" disabled><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>Save key</button>
-        </div>
-      </section>
+    <div class="dlg glass setup" role="dialog" aria-modal="true" aria-label="Camera and connector setup">
       <section class="setup-step" id="setupStep2" hidden>
         <h2 tabindex="-1">Camera check</h2>
-        <p class="setup-ok" id="setupSaved" role="status"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-check"/></svg>Saved securely on this computer.</p>
+
         <p class="dlg-sub">Now let Attune use your camera. Sit as you usually do — tips appear here until your face is found.</p>
         <div class="setup-cam" id="setupCam" role="status" aria-live="polite">
           <svg class="ic" aria-hidden="true"><use id="setupCamIcon" href="assets/icons.svg#i-face"/></svg><span id="setupCamText">The camera is off.</span>

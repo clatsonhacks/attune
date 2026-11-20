@@ -3,7 +3,7 @@
 ## Project
 Attune: a private local "sensing layer" for AI apps. Webcam + Presage SmartSpectra (isolated worker) → neutral
 snapshot → **lenses** (companion, yoga, casual) → AI apps via a local MCP connector, approved per app by the person.
-Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (152 passing after desktop integration).
+Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (153 passing with desktop key management).
 
 ## Rules from the owner
 - Small commits, author `clatsonhacks`, **no Co-Authored-By / trailer lines**, push to `main`.
@@ -25,9 +25,9 @@ Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (152 pa
 
 ## Desktop and extension integration
 
-Both feature branches have been merged into the local checkout. The first-run screens and restart helper are integrated. The desktop app includes a Windows tray, OS-encrypted camera-key storage, camera check, and the Claude extension download. The restart control requires an explicit confirmation and targets the Microsoft Store installation.
+Both feature branches have been merged into the local checkout. The first-run screens and restart helper are integrated. The desktop app includes a Windows tray, an API Keys page with OS-encrypted SmartSpectra and Groq storage, camera check, and the Claude extension download. The restart control requires an explicit confirmation and targets the Microsoft Store installation.
 
-Use `npm run build:desktop` for the Windows x64 installer and the standalone extension. See the README for the development commands and installation flow. The desktop and web service both use port 3000 by default.
+From a clone, run `npm ci` and `npm start` for the desktop setup, or `npm run desktop:demo` for the key-free walkthrough. Use `npm run build:desktop` for the Windows x64 installer and the standalone extension. See the README for the development commands and installation flow. The desktop and web service both use port 3000 by default.
 
 ## Remaining verification and later work
 

@@ -446,3 +446,8 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .sk-actions { display:flex; gap:6px; }
 .sk-status { flex:1 1 100%; font-size:12.5px; color:var(--muted); }
 .sk-status:empty { display:none; }
+
+.key-card { padding: 16px 0; border-bottom: 1px solid var(--glass-brd); }
+.key-card h3, .key-card p { margin: 0 0 8px; }
+.key-card .key-field { max-width: 32rem; }
+.key-card [role=status] { margin-left: 8px; color: var(--muted); }

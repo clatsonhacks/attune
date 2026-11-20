@@ -82,7 +82,7 @@ const BODY_TOOL = {
 };
 
 const ERRORS = {
-  not_connected: 'The AI is not connected. Add GROQ_API_KEY to .env and restart Attune.',
+  not_connected: 'The AI is not connected. Check your Groq key in API Keys.',
   forbidden: 'The Groq key does not have access to this model.',
   rate_limited: 'The AI is busy (rate limited). Try again in a moment.',
   offline: "Can't reach Groq. Check the internet connection.",
@@ -98,7 +98,7 @@ function classifyStatus(status) {
   return 'unavailable';
 }
 
-function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = process.env, log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
+function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = process.env, getKey = () => groqKey(env), log = (m) => process.stderr.write(`[attune] ${m}\n`) } = {}) {
   let turns = []; // [{ user, system?, assistant }] — plain chat messages
   let lastError = null;
   let everSucceeded = false;
@@ -107,7 +107,7 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
     return demo
       ? { mode: 'demo', provider: 'scripted', model: null, connected: true, error: null }
       : { mode: 'real', provider: 'groq', model: MODEL, error: lastError,
-        connected: lastError !== 'not_connected' && (everSucceeded || !!groqKey(env)) };
+        connected: lastError !== 'not_connected' && (everSucceeded || !!getKey()) };
   }
 
   async function post(key, payload) {
@@ -140,7 +140,7 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
    */
   async function reply({ message, ctx, onBodyRequest }) {
     if (demo) return mockReply({ message, ctx });
-    const key = groqKey(env);
+    const key = getKey();
     if (!key) { lastError = 'not_connected'; return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false }; }
 
     const user = { role: 'user', content: String(message) };

@@ -67,9 +67,12 @@ function proposeMood(m, immediate = false) {
 }
 
 /* ---------- Views ---------- */
-const TITLES = { home: 'Companion', memory: 'Memory', connectors: 'Connectors', activity: 'Activity' };
+const TITLES = { home: 'Companion', memory: 'Memory', keys: 'API Keys', connectors: 'Connectors', activity: 'Activity' };
 let currentView = 'home';
 function switchView(v) {
+  if (currentView === 'keys' && v !== 'keys') {
+    for (const id of ['camera', 'groq']) { $(id + 'Input').value = ''; $(id + 'Save').disabled = true; }
+  }
   currentView = v;
   document.querySelectorAll('.navitem').forEach((n) => {
     n.classList.toggle('active', n.dataset.view === v);
@@ -879,66 +882,55 @@ $('chatForm').onsubmit = async (e) => {
   if (lastState) proposeMood(moodFor({ ...lastState, state: r.state || lastState.state }), true);
 };
 
-/* ---------- First-run setup (desktop app): camera key → camera check → connect Claude ---------- */
-// Shown only when the desktop app has no SmartSpectra key yet. The key goes to /api/setup/key once and is never read back.
-let setup = { desktop: false, needsKey: false, demo: false }, setupStep = 0, setupKeyOnly = false, setupWaitingConsent = false;
-async function loadSetup() {
-  try {
-    const r = await api('/api/setup');
-    if (r && typeof r.desktop === 'boolean') setup = { desktop: r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
-  } catch { return; }
-  renderKeyRow();
-  if (setup.desktop && setup.needsKey && !setupSkipped()) openSetup(1);
+/* ---------- API keys and optional camera check ---------- */
+let setup = {}, setupStep = 0, setupWaitingConsent = false;
+const keyRoutes = { camera: '/api/setup/key', groq: '/api/setup/groq' };
+async function loadSetup(firstRun = false) {
+  const r = await api('/api/setup/keys');
+  if (typeof r.desktop !== 'boolean') throw new Error('Could not read key settings.');
+  setup = r;
+  $('keyHelp').textContent = r.desktop
+    ? 'Add your own keys for the features you want. Keys are encrypted for your computer account. Demo mode needs neither key.'
+    : 'For encrypted key management, run npm start from the checkout. The web-only service reads SMARTSPECTRA_API_KEY and GROQ_API_KEY from its environment.';
+  for (const id of Object.keys(keyRoutes)) {
+    const saved = id === 'camera' ? !r.needsKey : r.hasGroq;
+    $(id + 'Input').disabled = !r.desktop;
+    $(id + 'Save').hidden = !r.desktop;
+    $(id + 'Remove').hidden = !r.desktop || !saved;
+    $(id + 'Status').textContent = saved ? 'Configured' : 'No key added';
+  }
+  $('cameraCheck').hidden = r.needsKey && !r.demo;
+  if (firstRun && r.desktop && !r.demo && (r.needsKey || !r.hasGroq)) {
+    let prompted = false;
+    try { prompted = !!localStorage.getItem('attune_keys_intro'); localStorage.setItem('attune_keys_intro', '1'); } catch {}
+    if (!prompted) switchView('keys');
+  }
 }
-function setupSkipped() { try { return sessionStorage.getItem('attune_setup_skipped') === '1'; } catch { return false; } }
-function openSetup(step, keyOnly = false) {
-  setupKeyOnly = keyOnly;
-  $('setupKey').value = '';
-  $('setupErr').hidden = true;
-  $('setupSave').disabled = true;
-  $('setupDemoNote').hidden = !setup.demo;
-  $('setupSkip').textContent = keyOnly ? 'Cancel' : 'Skip for now';
-  $('setupSteps').hidden = keyOnly;
-  $('setupDlg').hidden = false;
-  showSetupStep(step);
+for (const [id, route] of Object.entries(keyRoutes)) {
+  const input = $(id + 'Input'), save = $(id + 'Save'), remove = $(id + 'Remove');
+  input.oninput = () => { save.disabled = !input.value.trim(); };
+  async function update(clear) {
+    input.disabled = save.disabled = remove.disabled = true;
+    try {
+      const result = await api(clear ? route + '/clear' : route, clear ? {} : { key: input.value.trim() });
+      if (!result.ok) throw new Error(result.error || 'Could not update the key.');
+      input.value = '';
+      await loadSetup();
+    } catch (error) { $(id + 'Status').textContent = error.message; }
+    finally { input.disabled = remove.disabled = false; save.disabled = !input.value.trim(); }
+  }
+  $(id + 'Form').onsubmit = (event) => { event.preventDefault(); if (!save.disabled) update(false); };
+  remove.onclick = () => { if (confirm('Remove the saved ' + (id === 'camera' ? 'SmartSpectra' : 'Groq') + ' key?')) update(true); };
 }
+$('keysLater').onclick = () => switchView('home');
+$('cameraCheck').onclick = () => { $('setupDlg').hidden = false; showSetupStep(2); };
 function showSetupStep(n) {
   setupStep = n;
-  [1, 2, 3].forEach((i) => { $('setupStep' + i).hidden = i !== n; });
-  $('setupSteps').querySelectorAll('li').forEach((li) => {
-    const i = Number(li.dataset.step);
-    li.classList.toggle('cur', i === n);
-    li.classList.toggle('done', i < n);
-    if (i === n) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
-  });
-  $('setupSaved').hidden = setup.needsKey;
+  for (const step of [2, 3]) $('setupStep' + step).hidden = n !== step;
   if (n === 2 && lastState) renderSetupCam(lastState);
-  (n === 1 ? $('setupKey') : $('setupStep' + n).querySelector('h2')).focus();
+  $('setupStep' + n).querySelector('h2').focus();
 }
-function closeSetup() { $('setupKey').value = ''; $('setupDlg').hidden = true; setupStep = 0; }
-$('setupKey').oninput = () => { $('setupSave').disabled = !$('setupKey').value.trim(); $('setupErr').hidden = true; };
-$('setupKey').onkeydown = (e) => { if (e.key === 'Enter' && !$('setupSave').disabled) $('setupSave').click(); };
-$('setupSave').onclick = async () => {
-  $('setupSave').disabled = true;
-  let r;
-  try { r = await api('/api/setup/key', { key: $('setupKey').value }); } catch { r = null; }
-  if (!r || !r.ok) {
-    $('setupErr').textContent = (r && r.error) || 'Could not reach Attune. Try again.';
-    $('setupErr').hidden = false;
-    $('setupSave').disabled = false;
-    $('setupKey').focus();
-    return;
-  }
-  $('setupKey').value = '';
-  setup = { desktop: !!r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
-  renderKeyRow('Saved securely on this computer.');
-  if (setupKeyOnly) return closeSetup();
-  showSetupStep(2);
-};
-$('setupSkip').onclick = () => {
-  if (!setupKeyOnly) { try { sessionStorage.setItem('attune_setup_skipped', '1'); } catch {} }
-  closeSetup();
-};
+function closeSetup() { $('setupDlg').hidden = true; setupStep = 0; }
 $('setupLater').onclick = closeSetup;
 $('setupNext').onclick = () => showSetupStep(3);
 $('setupDone').onclick = closeSetup;
@@ -980,24 +972,6 @@ function renderSetupCam(s) {
 }
 
 /* Camera key row (sidebar, desktop app only): replace or remove the saved key. */
-function renderKeyRow(msg = '') {
-  $('keyRow').hidden = !setup.desktop;
-  $('keyState').textContent = setup.needsKey ? 'Not set' : 'Saved on this computer';
-  $('keyReplace').textContent = setup.needsKey ? 'Add key' : 'Replace';
-  $('keyRemove').hidden = setup.needsKey;
-  $('keyStatus').textContent = msg;
-}
-$('keyReplace').onclick = () => openSetup(1, true);
-$('keyRemove').onclick = async () => {
-  if (!confirm('Remove the camera key from this computer?\n\nAttune cannot measure until you add a key again.')) return;
-  try {
-    const r = await api('/api/setup/key/clear', {});
-    if (!r || !r.ok) throw new Error((r && r.error) || 'failed');
-    setup = { desktop: !!r.desktop, needsKey: !!r.needsKey, demo: !!r.demo };
-    renderKeyRow('Key removed.');
-  } catch { renderKeyRow('Could not remove the key. Try again.'); }
-};
-
 /* ---------- boot ---------- */
 scrollArea($('logHost'), $('log'));
 scrollArea($('slotHost'), $('slot'));
@@ -1007,7 +981,7 @@ scrollArea($('dayDetail'));
 setTimeout(() => $('mascot').classList.remove('greeting'), 2400); // hello wave, then settle to idle
 setInterval(poll, 400); poll();
 loadLenses().then(() => refreshApps(true));
-loadSetup();
+loadSetup(true).catch(() => { $('keyHelp').textContent = 'Could not load key settings. Reload Attune to try again.'; });
 // Requests made by an AI show up (badge + card) without a reload; the activity list refreshes while it is open.
 setInterval(() => { refreshApps(); if (currentView === 'activity') loadActivity(); }, 4000);
 scrollArea($('actHost'), $('actList'));

@@ -29,7 +29,7 @@ const path = require('path');
 const { createSession } = require('./session');
 const { createMemory, defaultMemoryFile } = require('./memory');
 const { createAdapter, isDemo } = require('./adapter');
-const { createCompanion } = require('./companion');
+const { createCompanion, groqKey } = require('./companion');
 const { connectorsStatus, registerClaudeDesktop } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
@@ -95,19 +95,27 @@ function createApp({
   // OS-encrypted storage. When given, the SmartSpectra key comes from here (never from .env), is kept in memory only
   // and reaches nothing but the sensor worker's environment.
   keyStore = null,
+  groqStore = null,
   makeAdapter = createAdapter, // test hook: what the default adapterFactory calls
 } = {}) {
   const desktop = !!keyStore;
   let storedKey = null;
-  const keyReady = desktop
-    ? Promise.resolve().then(() => keyStore.get()).then((k) => { storedKey = typeof k === 'string' && k ? k : null; })
-      .catch((e) => log(`could not read the saved camera key (${(e && e.code) || 'error'})`))
-    : Promise.resolve();
+  let storedGroqKey = null;
+  async function loadKey(store, apply) {
+    if (!store) return;
+    try { apply(await store.get()); }
+    catch { log('Could not read an encrypted API key.'); }
+  }
+  const keyReady = Promise.all([
+    loadKey(keyStore, (key) => { storedKey = key; }),
+    loadKey(groqStore, (key) => { storedGroqKey = key; }),
+  ]);
   const hasKey = () => (desktop ? !!storedKey : !!process.env.SMARTSPECTRA_API_KEY);
   adapterFactory = adapterFactory || (() => makeAdapter({
     intervalMs: Number(process.env.ATTUNE_TICK_MS) || 250, ...(desktop ? { apiKey: storedKey || '' } : {}) }));
-  companion = companion || createCompanion({ demo, log });
-  const replyFn = reply || companion.reply;
+  const makeCompanion = () => createCompanion({ demo, log, ...(desktop ? { getKey: () => storedGroqKey } : {}) });
+  companion = companion || makeCompanion();
+
   const guard = createLocalGuard({ port });
   // Connector API token: 32 random bytes, kept in service.json and reused when a previous run left one there.
   const connectorToken = savedConnectorToken(serviceFile) || crypto.randomBytes(32).toString('hex');
@@ -372,6 +380,21 @@ function createApp({
     return t.length >= 16 && t.length <= 256 && /^\S+$/.test(t) ? t : null;
   }
   async function handleSetup(req, res, method, url) {
+    if (method === 'GET' && url === '/api/setup/keys') {
+      return sendJSON(res, 200, { ...setupPayload(), hasGroq: !!(desktop ? storedGroqKey : groqKey()) });
+    }
+    if (method === 'POST' && ['/api/setup/groq', '/api/setup/groq/clear'].includes(url)) {
+      if (!groqStore) return sendJSON(res, 404, { error: 'Open the desktop app to manage encrypted keys.' });
+      const clearing = url.endsWith('/clear');
+      const body = await readBody(req);
+      const key = clearing ? null : cleanKey(body?.key);
+      if (!clearing && !key) return sendJSON(res, 400, { error: 'Paste the complete Groq key without spaces.' });
+      try { if (clearing) await groqStore.clear(); else await groqStore.set(key); }
+      catch { return sendJSON(res, 500, { error: 'Could not update the encrypted Groq key.' }); }
+      storedGroqKey = key;
+      companion = makeCompanion();
+      return sendJSON(res, 200, { ok: true });
+    }
     if (method === 'GET' && url === '/api/setup') return sendJSON(res, 200, setupPayload());
     if (method !== 'POST' || (url !== '/api/setup/key' && url !== '/api/setup/key/clear')) return sendJSON(res, 404, { error: 'not found' });
     if (!desktop) return sendJSON(res, 404, { error: 'The camera key can only be set in the Attune desktop app. Use .env with npm run web.' });
@@ -441,7 +464,7 @@ function createApp({
       // Immediate cache read from the Context Bridge — never waits on the SDK or an Insight.
       const share = consent.has('aiSharing') && sensingActive();
       const ctx = share ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
-      const out = await replyFn({ message: String(message || '').slice(0, 4000), ctx, onBodyRequest: consent.has('aiSharing') ? bodyRequest : undefined });
+      const out = await (reply || companion.reply)({ message: String(message || '').slice(0, 4000), ctx, onBodyRequest: consent.has('aiSharing') ? bodyRequest : undefined });
       return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share, ai: companion.status() });
     }
     if (method === 'POST' && url === '/api/chat/reset') {

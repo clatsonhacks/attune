@@ -71,7 +71,7 @@ test('no GROQ_API_KEY → not connected, and no request is made', async () => {
   assert.strictEqual(c.status().connected, false);
   const r = await c.reply({ message: 'hi', ctx: null });
   assert.strictEqual(r.error, 'not_connected');
-  assert.match(r.errorText, /GROQ_API_KEY/);
+  assert.match(r.errorText, /API Keys/);
   assert.strictEqual(f.calls.length, 0);
 });
 
