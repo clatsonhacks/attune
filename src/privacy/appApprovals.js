@@ -11,7 +11,8 @@
  * Writes are atomic (temp file + rename).
  *
  * Backward compatibility: an app with NO entry may use the default lens (companion) only — that is what every
- * connector could read before lenses existed. Any other lens needs an explicit approval.
+ * connector could read before lenses existed. Any other lens needs an explicit approval. A strict caller (the
+ * ChatGPT profile) gets no such default: every lens, companion included, needs an explicit entry.
  */
 const fs = require('fs');
 const path = require('path');
@@ -106,17 +107,17 @@ function createAppApprovals(filePath) {
   function get(appId) { if (!isAppId(appId)) return null; const a = read().apps[appId]; return a ? view(appId, a) : null; }
   function hasEntry(appId) { return isAppId(appId) && !!read().apps[appId]; }
 
-  /** Lenses this app may use right now (re-read from disk on every call). */
-  function approvedLenses(appId) {
+  /** Lenses this app may use right now (re-read from disk on every call). strict: no default without an entry. */
+  function approvedLenses(appId, { strict = false } = {}) {
     if (!isAppId(appId)) return [];
     const a = read().apps[appId];
-    return a ? [...a.lenses] : [DEFAULT_LENS];
+    return a ? [...a.lenses] : strict ? [] : [DEFAULT_LENS];
   }
 
-  function isApproved(appId, lensId) {
+  function isApproved(appId, lensId, opts) {
     const lens = typeof lensId === 'string' ? getLens(lensId) : null;
     if (!lens || lens.id !== lensId) return false;
-    return approvedLenses(appId).includes(lens.id);
+    return approvedLenses(appId, opts).includes(lens.id);
   }
 
   /**

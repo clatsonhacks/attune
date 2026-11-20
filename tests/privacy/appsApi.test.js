@@ -58,7 +58,7 @@ test('GET /api/lenses lists the registry', async (t) => {
 test('apps: built-in Attune is listed and protected; approvals and pending are managed by the person', async (t) => {
   const { api, apps } = await boot(t);
   let r = (await api('/api/apps')).json;
-  assert.deepStrictEqual(r.apps, [{ id: 'attune', name: 'Attune', lenses: listLenses().map((l) => l.id), builtin: true }]);
+  assert.deepStrictEqual(r.apps, [{ id: 'attune', name: 'Attune', lenses: listLenses().map((l) => l.id), builtin: true, lastSeenAt: null }]);
   assert.deepStrictEqual(r.pending, []);
 
   apps.approvals.recordRequest('chatgpt', 'test-web-lens'); // the connector asked
@@ -70,7 +70,7 @@ test('apps: built-in Attune is listed and protected; approvals and pending are m
   assert.deepStrictEqual(set.json, { ok: true, app: { id: 'chatgpt', name: 'ChatGPT', lenses: ['companion', 'test-web-lens'], builtin: false } });
   r = (await api('/api/apps')).json;
   assert.deepStrictEqual(r.pending, []);
-  assert.deepStrictEqual(r.apps[1], { id: 'chatgpt', name: 'ChatGPT', lenses: ['companion', 'test-web-lens'], builtin: false });
+  assert.deepStrictEqual(r.apps[1], { id: 'chatgpt', name: 'ChatGPT', lenses: ['companion', 'test-web-lens'], builtin: false, lastSeenAt: null });
   assert.strictEqual(apps.approvals.isApproved('chatgpt', 'test-web-lens'), true);
 
   assert.strictEqual((await api('/api/apps/lens', { app: 'chatgpt', lens: 'companion', allow: false })).json.app.lenses.join(), 'test-web-lens');

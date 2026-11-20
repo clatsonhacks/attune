@@ -14,6 +14,11 @@
  *  - Lenses: the built-in companion reads through the lens the person picked (POST /api/mode, default companion).
  *    Other apps (MCP connectors) are approved per lens here (/api/apps/*) — nothing an AI can call reaches these
  *    routes. Who read which lens is in the number-free activity log (/api/activity).
+ *  - Connector API (/connector/v1/*): the ONLY way an MCP connector (src/server.js, a thin stdio client) reaches
+ *    Attune. Bearer token from service.json in the per-user data folder; any request carrying an Origin (or
+ *    Sec-Fetch-*) header is refused, so a browser can never call it. It reads status, purposes, context and memory
+ *    and records corrections and notes; it cannot grant consent, approve a purpose or forget memory — only the person
+ *    can, in this UI. This service is the only process that ever opens the camera.
  *
  * Run: npm run web   (PORT env optional, default 3000; settings can live in .env)
  */
@@ -34,8 +39,9 @@ const { createCapabilities } = require('./privacy/capabilities');
 const { createContextBridge } = require('./contextBridge');
 const { normalizeInsight } = require('./insights/normalizer');
 const { getLens, listLenses, DEFAULT_LENS } = require('./lenses');
-const { createAppApprovals, defaultAppsFile, isAppId } = require('./privacy/appApprovals');
+const { createAppApprovals, defaultAppsFile, isAppId, labelFor } = require('./privacy/appApprovals');
 const { createActivityLog, defaultActivityFile } = require('./activity');
+const { storeFile, writeFileAtomic } = require('./paths');
 
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
@@ -47,6 +53,25 @@ const VENDOR = {
 };
 const NO_CONTEXT = { state: 'off', say: false, directive: null, suggestedUtterance: null, confidence: 0 };
 const BUILTIN_APP = 'attune'; // this web companion: the person's own UI, may use every lens, never stored
+const CONNECTOR_PREFIX = '/connector/v1/';
+const CONNECTOR_ROUTES = new Set(['GET status', 'GET purposes', 'POST context', 'POST correction', 'GET memory', 'POST memory']);
+const CONSENT_HINT = 'Open Attune and allow camera sensing and sharing with AI apps.';
+const TOKEN_RE = /^[0-9a-f]{64}$/;
+
+/** Reuse the connector token from an existing service.json (e.g. one a previous run left behind), else null. */
+function savedConnectorToken(file) {
+  if (!file) return null;
+  try {
+    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return d && d.version === 1 && typeof d.token === 'string' && TOKEN_RE.test(d.token) ? d.token : null;
+  } catch { return null; }
+}
+
+function sameSecret(a, b) {
+  const x = Buffer.from(String(a || ''));
+  const y = Buffer.from(String(b || ''));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
 
 function createApp({
   port = 3000,
@@ -62,10 +87,15 @@ function createApp({
   approvals = createAppApprovals(defaultAppsFile(demo)),
   activity = createActivityLog(defaultActivityFile(demo)),
   registerClaude = registerClaudeDesktop, // test hook
+  // Where the running service announces its port + connector token to connectors (null: don't announce).
+  serviceFile = storeFile('service', { demo }),
 } = {}) {
   companion = companion || createCompanion({ demo, log });
   const replyFn = reply || companion.reply;
   const guard = createLocalGuard({ port });
+  // Connector API token: 32 random bytes, kept in service.json and reused when a previous run left one there.
+  const connectorToken = savedConnectorToken(serviceFile) || crypto.randomBytes(32).toString('hex');
+  const lastSeen = new Map(); // app id → ISO time of its last connector call (in memory)
   const consent = createConsent();
   const capabilities = createCapabilities({ consent });
   const bridge = createContextBridge({ capabilities });
@@ -215,12 +245,115 @@ function createApp({
     return { ...base, ...ctx, pulseBpm: lastSample && lastSample.pulseBpm ? Math.round(lastSample.pulseBpm) : null, signals: session.getSignals(), breath, insight: bridge.getHumanView().insight };
   }
 
+  /* ---- Connector API: what an MCP connector may do (never consent, approvals or forgetting) ---- */
+  function connectorDenied(req) {
+    // Browsers send Origin (and Sec-Fetch-*) on any request that could carry a token; a connector never does.
+    if (req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined) return { code: 403, error: 'not available to browsers' };
+    const m = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
+    if (!m || !sameSecret(m[1], connectorToken)) return { code: 401, error: 'missing or invalid connector token' };
+    return null;
+  }
+  const recordFor = (app, event) => { try { activity.append({ ...event, app }); } catch {} };
+  function cleanName(n) {
+    const s = typeof n === 'string' ? n.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
+    return s ? s.slice(0, 60) : null;
+  }
+  function displayName(app, given) {
+    try { const a = approvals.get(app); if (a) return a.name; } catch {}
+    return cleanName(given) || labelFor(app);
+  }
+  function approvedFor(app, strict) { try { return approvals.approvedLenses(app, { strict }); } catch { return []; } }
+
+  function connectorStatus(app, strict) {
+    const sensingAllowed = consent.has('sensing');
+    const aiSharingAllowed = consent.has('aiSharing');
+    return {
+      attune: 'running', mode: demo ? 'demo' : 'real', sensingAllowed, aiSharingAllowed, memoryAllowed: consent.has('memory'),
+      paused, camera: sensing.status().state, app, approvedPurposes: approvedFor(app, strict),
+      ...(sensingAllowed && aiSharingAllowed ? {} : { howToEnable: CONSENT_HINT }),
+    };
+  }
+
+  /** Same semantics as the connector's get_body_context: consent, purpose approval, then an immediate cache read. */
+  async function connectorContext(app, { purpose, appName } = {}, strict) {
+    const lens = getLens(purpose == null || purpose === '' ? DEFAULT_LENS : String(purpose).slice(0, 60));
+    if (!consent.has('sensing') || !consent.has('aiSharing')) {
+      recordFor(app, { kind: 'context', lens: lens ? lens.id : null, state: 'consent_required', say: false });
+      return { state: 'consent_required', say: false, sensingAllowed: consent.has('sensing'), aiSharingAllowed: consent.has('aiSharing'), howToEnable: CONSENT_HINT };
+    }
+    if (!lens) {
+      recordFor(app, { kind: 'unknown', lens: null, state: 'unknown_purpose', say: false });
+      return { state: 'unknown_purpose', say: false, availablePurposes: listLenses().map((l) => l.id) };
+    }
+    if (!approvedFor(app, strict).includes(lens.id)) {
+      let wasPending = false;
+      try {
+        wasPending = approvals.pending().some((p) => p.app === app && p.lens === lens.id);
+        approvals.recordRequest(app, lens.id);
+      } catch {}
+      recordFor(app, { kind: wasPending ? 'denied' : 'request', lens: lens.id, state: 'purpose_not_approved', say: false });
+      return { state: 'purpose_not_approved', lens: lens.id, say: false,
+        howToEnable: `Open Attune → Connectors and allow ${displayName(app, appName)} to use ${lens.name}.` };
+    }
+    if (paused) {
+      recordFor(app, { kind: 'context', lens: lens.id, state: 'paused', say: false });
+      return { ...NO_CONTEXT, lens: lens.id, state: 'paused' };
+    }
+    const st = await wake('ai_requested'); // respects pause and idle; never waits for frames
+    if (st.state === 'error') {
+      recordFor(app, { kind: 'context', lens: lens.id, state: 'unavailable', say: false });
+      return { state: 'unavailable', say: false, error: st.error };
+    }
+    let ctx;
+    if (st.state !== 'active') ctx = { ...NO_CONTEXT, lens: lens.id, state: 'starting' };
+    else {
+      // A capability limited to the app's CURRENT approvals (re-read now), used for this one read only.
+      const cap = capabilities.issue({ scope: 'aiSharing', purpose: `mcp:${app}`, lenses: approvedFor(app, strict) });
+      try { ctx = bridge.getLensContext(cap, lens.id); } finally { capabilities.revoke(cap); } // immediate cache read
+      if (ctx.state === 'off') ctx = { ...ctx, state: 'starting' };
+    }
+    recordFor(app, { kind: ctx.state === 'purpose_not_approved' ? 'denied' : 'context', lens: lens.id, state: ctx.state, say: !!ctx.say });
+    return ctx;
+  }
+
+  async function handleConnector(req, res, method, route, query) {
+    const denied = connectorDenied(req);
+    if (denied) return sendJSON(res, denied.code, { error: denied.error });
+    if (!CONNECTOR_ROUTES.has(`${method} ${route}`)) return sendJSON(res, 404, { error: 'not found' });
+    const body = method === 'POST' ? await readBody(req) : {};
+    const q = new URLSearchParams(query);
+    const app = method === 'POST' ? body.app : q.get('app');
+    if (!isAppId(app) || app === BUILTIN_APP) return sendJSON(res, 400, { error: 'invalid app' });
+    const strict = method === 'POST' ? body.strict === true : ['1', 'true'].includes(q.get('strict'));
+    lastSeen.set(app, new Date().toISOString());
+
+    if (route === 'status') return sendJSON(res, 200, connectorStatus(app, strict));
+    if (route === 'purposes') {
+      const ok = approvedFor(app, strict);
+      return sendJSON(res, 200, { app, purposes: listLenses().map(({ id, name, description, sharesNumbers }) => ({ id, name, description, sharesNumbers, approved: ok.includes(id) })) });
+    }
+    if (route === 'context') return sendJSON(res, 200, await connectorContext(app, body, strict));
+    if (route === 'correction') {
+      if (!sensingActive()) return sendJSON(res, 200, { ok: false, reason: 'sensing is not active' });
+      return sendJSON(res, 200, session.recordCorrection({ wasAccurate: body.wasAccurate === true }));
+    }
+    if (method === 'GET') { // memory
+      if (!consent.has('memory') || !consent.has('aiSharing')) return sendJSON(res, 200, { memory: 'disabled', reason: 'Memory and sharing with AI apps must both be on in Attune.' });
+      return sendJSON(res, 200, memory.summary());
+    }
+    if (typeof body.note !== 'string' || !body.note.trim()) return sendJSON(res, 400, { error: 'note must be a non-empty string' });
+    if (!consent.has('memory')) return sendJSON(res, 200, { ok: false, reason: 'Memory is off in Attune.' });
+    memory.append({ type: 'note', note: body.note.slice(0, 500) });
+    return sendJSON(res, 200, { ok: true });
+  }
+
   async function handle(req, res) {
     const { method } = req;
     const [url, query = ''] = req.url.split('?');
     const isApi = url.startsWith('/api/');
     const denied = guard.check(req, { requireToken: isApi });
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
+    if (url.startsWith(CONNECTOR_PREFIX)) return handleConnector(req, res, method, url.slice(CONNECTOR_PREFIX.length), query);
 
     if (method === 'GET' && url === '/api/state') return sendJSON(res, 200, statePayload());
 
@@ -303,9 +436,12 @@ function createApp({
       return sendJSON(res, 200, { ok: true, lensMode });
     }
     if (method === 'GET' && url === '/api/apps') {
-      const builtin = { id: BUILTIN_APP, name: 'Attune', lenses: listLenses().map((l) => l.id), builtin: true };
-      const stored = approvals.list().filter((a) => a.id !== BUILTIN_APP).map(({ id, name, lenses }) => ({ id, name, lenses, builtin: false }));
-      return sendJSON(res, 200, { apps: [builtin, ...stored], pending: approvals.pending().filter((p) => p.app !== BUILTIN_APP) });
+      const builtin = { id: BUILTIN_APP, name: 'Attune', lenses: listLenses().map((l) => l.id), builtin: true, lastSeenAt: null };
+      const stored = approvals.list().filter((a) => a.id !== BUILTIN_APP)
+        .map(({ id, name, lenses }) => ({ id, name, lenses, builtin: false, lastSeenAt: lastSeen.get(id) || null }));
+      // lastSeen also covers connected apps that have no approvals entry yet.
+      return sendJSON(res, 200, { apps: [builtin, ...stored], pending: approvals.pending().filter((p) => p.app !== BUILTIN_APP),
+        lastSeen: Object.fromEntries(lastSeen) });
     }
     if (method === 'POST' && url === '/api/apps/lens') {
       const { app, lens, allow, name } = await readBody(req);
@@ -333,7 +469,7 @@ function createApp({
     }
     if (method === 'POST' && url === '/api/activity/clear') { activity.clear(); return sendJSON(res, 200, { ok: true }); }
 
-    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus());
+    if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, connectorsStatus({ lastSeenAt: (id) => lastSeen.get(id) || null }));
     if (method === 'POST' && url === '/api/connectors/claude') {
       if (demo) return sendJSON(res, 403, { error: 'Open Attune in real mode to register Claude Desktop.' });
       const body = await readBody(req);
@@ -362,13 +498,33 @@ function createApp({
     handle(req, res).catch((e) => { log(`request failed: ${e.message}`); if (!res.headersSent) sendJSON(res, 500, { error: 'internal error' }); });
   });
 
+  // Announce the running service to connectors: { version, port, token, pid, startedAt }, user-only, atomic.
+  let announced = null;
+  server.on('listening', () => {
+    if (!serviceFile) return;
+    const info = { version: 1, port: server.address().port, token: connectorToken, pid: process.pid, startedAt: new Date().toISOString() };
+    try { writeFileAtomic(serviceFile, JSON.stringify(info, null, 2) + '\n'); announced = info; }
+    catch (e) { log(`could not write ${path.basename(serviceFile)}: ${e.code || e.message}`); }
+  });
+  /** Remove service.json only if it still describes this run (another instance may have replaced it). */
+  function withdraw() {
+    if (!announced) return;
+    const mine = announced;
+    announced = null;
+    try {
+      const cur = JSON.parse(fs.readFileSync(serviceFile, 'utf8'));
+      if (cur && cur.pid === mine.pid && cur.port === mine.port && cur.startedAt === mine.startedAt) fs.unlinkSync(serviceFile);
+    } catch {}
+  }
+
   async function close() {
+    withdraw();
     clearTimeout(idleTimer);
     await sensing.shutdown();
     await new Promise((r) => server.close(() => r()));
   }
 
-  return { server, consent, sensing, guard, bridge, capabilities, approvals, activity, close };
+  return { server, consent, sensing, guard, bridge, capabilities, approvals, activity, close, serviceFile, connectorToken };
 }
 
 if (require.main === module) {
