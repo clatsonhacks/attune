@@ -451,3 +451,6 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .key-card h3, .key-card p { margin: 0 0 8px; }
 .key-card .key-field { max-width: 32rem; }
 .key-card [role=status] { margin-left: 8px; color: var(--muted); }
+
+.voice-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.voice-bar [role=status] { font-size:14px; color:var(--muted); }

@@ -3,7 +3,7 @@
 ## Project
 Attune: a private local "sensing layer" for AI apps. Webcam + Presage SmartSpectra (isolated worker) → neutral
 snapshot → **lenses** (companion, yoga, casual) → AI apps via a local MCP connector, approved per app by the person.
-Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (153 passing with desktop key management).
+Repo `clatsonhacks/attune`, branch `main`, Node 26, CommonJS, `npm test` (155 passing with voice chat).
 
 ## Rules from the owner
 - Small commits, author `clatsonhacks`, **no Co-Authored-By / trailer lines**, push to `main`.
@@ -33,7 +33,7 @@ From a clone, run `npm ci` and `npm start` for the desktop setup, or `npm run de
 
 - Install the extension in the owner's Claude Desktop and verify the first connector request and last-seen time. A real-camera check and restarting the live service or Claude need the owner's participation.
 - The test suite exercises the ChatGPT profile through an MCP stdio client. Testing the hosted ChatGPT tunnel requires the owner's account.
-- Voice-to-voice on Groq is the next milestone (M4). Read context through the Context Bridge without blocking audio on sensing.
+- Groq voice turns are available in Companion. Synthetic microphone and provider checks cover capture, transcription, reply, playback, listening again and stopping. A physical-device run with a live Groq account is still needed to evaluate real latency, model access and speech quality.
 
 ## Known gaps
 Not yet verified with a real face in view: SDK positioning (owner's face was "too low" last run), face-only

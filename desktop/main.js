@@ -39,7 +39,13 @@ async function start() {
     }
     return { action: 'deny' };
   });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  const session = window.webContents.session;
+  session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+    contents === window.webContents && permission === 'media' && new URL(requestingOrigin).origin === origin && details.mediaType === 'audio');
+  session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(contents === window.webContents && permission === 'media' && details.isMainFrame &&
+      new URL(details.requestingUrl).origin === origin && details.mediaTypes?.length === 1 && details.mediaTypes[0] === 'audio');
+  });
   window.on('close', (event) => { if (!quitting) { event.preventDefault(); window.hide(); } });
   tray = new Tray(icon);
   tray.setToolTip('Attune');

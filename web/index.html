@@ -124,6 +124,10 @@
             <div class="conv-head"><span>Companion</span><div class="seg mode-icons" id="modeSeg" role="radiogroup" aria-label="Companion mode"></div><span class="ai-status" id="aiStatus" hidden></span><button class="mini" id="newChat" title="Start a new conversation"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>New chat</button></div>
             <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
               <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
+            <div class="voice-bar"><button type="button" class="mini" id="voiceToggle">Start voice</button>
+              <button type="button" class="mini" id="voiceTurn" hidden>Send now</button>
+              <select id="voiceMic" aria-label="Voice microphone" hidden><option value="">Default microphone</option></select>
+              <span id="voiceStatus" role="status"></span></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>
@@ -252,5 +256,6 @@
 
   <script src="vendor/overlayscrollbars.js"></script>
   <script src="app.js"></script>
+  <script src="voice.js"></script>
 </body>
 </html>

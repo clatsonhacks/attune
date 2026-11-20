@@ -43,6 +43,8 @@ const { createAppApprovals, defaultAppsFile, isAppId, labelFor } = require('./pr
 const { createActivityLog, defaultActivityFile } = require('./activity');
 const { storeFile, writeFileAtomic } = require('./paths');
 
+const { createSpeechProvider, VoiceError } = require('./voice/groq');
+
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 // Third-party UI libraries, served from node_modules (no CDN, works offline). Explicit allowlist only.
@@ -96,6 +98,7 @@ function createApp({
   // and reaches nothing but the sensor worker's environment.
   keyStore = null,
   groqStore = null,
+  speechProvider = createSpeechProvider(),
   makeAdapter = createAdapter, // test hook: what the default adapterFactory calls
 } = {}) {
   const desktop = !!keyStore;
@@ -422,6 +425,38 @@ function createApp({
     const denied = guard.check(req, { requireToken: isApi });
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
     await keyReady; // the saved key is loaded before anything can start the camera
+    if (method === 'POST' && url.startsWith('/api/voice/')) {
+      if (demo) return sendJSON(res, 409, { error: 'Open Attune in real mode to use Groq voice.' });
+      const key = desktop ? storedGroqKey : groqKey();
+      if (!key) return sendJSON(res, 409, { error: 'Add your Groq key in API Keys before starting voice.' });
+      const cancel = new AbortController();
+      res.once('close', () => cancel.abort());
+      const signal = AbortSignal.any([cancel.signal, AbortSignal.timeout(45000)]);
+      try {
+        if (url === '/api/voice/transcribe') {
+          const text = await speechProvider.transcribe(req, key, signal);
+          return sendJSON(res, 200, { text });
+        }
+        if (url === '/api/voice/reply') {
+          const { text } = await readBody(req);
+          if (typeof text !== 'string' || !text.trim()) return sendJSON(res, 400, { error: 'Empty voice turn.' });
+          const ctx = consent.has('aiSharing') && sensingActive() ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
+          const out = await (reply || companion.reply)({ message: text.slice(0, 4000), ctx, signal, voice: true });
+          return sendJSON(res, out.error ? 502 : 200, out);
+        }
+        if (url === '/api/voice/speak') {
+          const { text } = await readBody(req);
+          const wav = await speechProvider.speak(text, key, signal);
+          res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'no-store' });
+          return res.end(wav);
+        }
+        return sendJSON(res, 404, { error: 'Unknown voice operation.' });
+      } catch (error) {
+        if (res.destroyed) return;
+        const expected = error instanceof VoiceError;
+        return sendJSON(res, expected ? error.status : 502, { error: expected ? error.message : 'Voice request failed. Try again or use text chat.' });
+      }
+    }
     if (url === '/api/setup' || url.startsWith('/api/setup/')) return handleSetup(req, res, method, url);
     if (url.startsWith(CONNECTOR_PREFIX)) return handleConnector(req, res, method, url.slice(CONNECTOR_PREFIX.length), query);
 

@@ -14,6 +14,8 @@ What leaves where, when, and under which consent. Update this table whenever a f
 | Decoded metrics (pulse, expression, talking) | SDK → adapter | Interpreter, in memory only | While sensing is active | `sensing` |
 | Pulse BPM + signal tiles | Session | Human UI via `/api/state` (localhost, token) | While sensing is active | `sensing` |
 | Approved context `{state, say, directive, suggestedUtterance, confidence}` | Session | Companion reply / MCP `get_body_context` (via the connector API) | Per chat turn / per tool call | `aiSharing` (one setting in Attune for the companion and every connector) |
+| Microphone recording of one turn | User microphone | Groq Whisper transcription API | After a pause or Send now in an active voice session | Start voice disclosure and microphone permission. Attune buffers audio in memory. End voice discards an unfinished recording. |
+| Voice transcript and companion reply | Whisper and the companion | Groq chat API for a reply, then Groq Orpheus for English playback | Per voice turn | Same session opt-in. Transcripts and replies appear in the conversation. No camera consent is required for voice. |
 | Chat message text + conversation history (last 20 turns, in memory only) | User | Groq API (`openai/gpt-oss-120b`), when `GROQ_API_KEY` is set | Per chat turn | Using the chat; disclosed under the chat box (demo mode: nothing leaves the device) |
 | Memory notes (state transitions, corrections; number-free) | Session | `memory.json` in the data folder (plaintext) | On transitions/corrections | `memory` |
 | Demo memory history | `memory.seedDemo()` | `demo/memory.json` (separate file) | Demo mode only | — (real mode removes any demo entries from its file) |

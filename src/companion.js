@@ -110,14 +110,14 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
         connected: lastError !== 'not_connected' && (everSucceeded || !!getKey()) };
   }
 
-  async function post(key, payload) {
+  async function post(key, payload, signal) {
     let res, body;
     try {
       res = await fetchFn(GROQ_URL, {
         method: 'POST',
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: MODEL, max_completion_tokens: 1024, temperature: 0.7, reasoning_effort: 'low', include_reasoning: false, ...payload }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS),
       });
       body = await res.json().catch(() => ({}));
     } catch (e) {
@@ -138,7 +138,7 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
    *  callback turns the camera on (if the person allowed it) and returns at once with the current reading or
    *  "warming up". It must never wait for the camera.
    */
-  async function reply({ message, ctx, onBodyRequest }) {
+  async function reply({ message, ctx, onBodyRequest, signal, voice = false }) {
     if (demo) return mockReply({ message, ctx });
     const key = getKey();
     if (!key) { lastError = 'not_connected'; return { reply: null, error: lastError, errorText: ERRORS[lastError], usedBody: false }; }
@@ -146,12 +146,12 @@ function createCompanion({ demo = false, fetchFn = (...a) => fetch(...a), env = 
     const user = { role: 'user', content: String(message) };
     const note = bodyNote(ctx);
     const system = note ? { role: 'system', content: note } : null;
-    const history = turns.flatMap((t) => [t.user, ...(t.system ? [t.system] : []), t.assistant]);
-    const messages = [{ role: 'system', content: SYSTEM }, ...history, user, ...(system ? [system] : [])];
+    const history = turns.flatMap((t) => [t.user, ...(t.system && !voice ? [t.system] : []), t.assistant]);
+    const messages = [{ role: 'system', content: voice ? SYSTEM + ' You are speaking aloud. Answer in one or two short conversational sentences.' : SYSTEM }, ...history, user, ...(system ? [system] : [])];
     const tools = onBodyRequest ? [BODY_TOOL] : null;
 
     let askedBody = false;
-    let r = await post(key, { messages, ...(tools ? { tools, tool_choice: 'auto' } : {}) });
+    let r = await post(key, { messages, ...(tools ? { tools, tool_choice: 'auto' } : {}) }, signal);
     for (let round = 0; !r.error && round < 2; round++) {
       const msg = r.body.choices && r.body.choices[0] && r.body.choices[0].message;
       const calls = (msg && Array.isArray(msg.tool_calls) ? msg.tool_calls : []).filter((c) => c && c.function && c.function.name === BODY_TOOL.function.name);

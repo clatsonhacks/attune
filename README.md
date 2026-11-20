@@ -21,6 +21,12 @@ On first launch, **API Keys** asks which features you want to enable. Add your o
 
 For a judge walkthrough with synthetic readings and scripted replies, run `npm run desktop:demo` instead of `npm start`. Demo uses a separate data folder and needs no accounts or keys. Quit any running Attune instance from the tray before switching modes. To try Claude installation from a fresh checkout, run `npm run build:extension`, then open **Connectors** in Attune. The Windows installer already includes the extension.
 
+## Talk to the companion
+
+In real mode, add your Groq key under **API Keys**. Open **Companion**, select **Start voice**, and accept the microphone disclosure. Speak, then pause for about a second or choose **Send now**. Attune shows the transcript, speaks its reply, and listens again. Use **Interrupt** to take the next turn during a reply. Select **End voice** to stop. Leaving the companion or hiding the window also ends the session.
+
+Voice sends recorded turns to Groq for [Whisper transcription](https://console.groq.com/docs/speech-to-text), sends the transcript to the companion model, and sends reply text to Groq for [Orpheus English speech](https://console.groq.com/docs/text-to-speech). Your Groq account needs access to all three models. Attune keeps the audio in memory during processing. Camera sensing is optional. Voice uses fresh context only when sensing is already active and AI sharing is allowed. Voice works with the camera off or paused. If audio fails, you can keep using text chat.
+
 **Consent once.** The first time, Attune asks for camera sensing and the Presage disclosure (AI sharing and
 memory are separate and optional). Your answer is remembered. After that the camera turns on when a chat starts
 or when the AI asks for a reading, shows a *Camera on* badge, and turns off after 5 minutes without chatting.
@@ -123,7 +129,7 @@ the full text; the AI only gets a short number-free note. `npm run test:adapter`
 
 ## Status
 Plan M0 ✅ · M1 consent + local boundary + worker isolation ✅ · M2 Insights ✅ (live-webcam validation pending) ·
-M3 Context Bridge ✅ · next: M4 Attune Live voice.
+M3 Context Bridge ✅ · M4 turn-based Groq voice available. Live-device evaluation is pending.
 
 ## Windows desktop and Claude extension
 

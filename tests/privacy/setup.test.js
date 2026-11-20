@@ -34,7 +34,7 @@ function fakeKeyStore(initial = null, { failSet = false } = {}) {
 
 const KEY = 'abcdEFGH1234ijklMNOP5678';
 
-async function boot(t, { keyStore, groqStore, demo = false } = {}) {
+async function boot(t, { keyStore, groqStore, speechProvider, demo = false } = {}) {
   const port = 30000 + Math.floor(Math.random() * 20000);
   const mem = tempMemory();
   const cs = tempConsentStore();
@@ -44,7 +44,7 @@ async function boot(t, { keyStore, groqStore, demo = false } = {}) {
   const restarter = { supported: true, async restart() { restarts.push(true); return { ok: true }; } };
   const made = [];
   const makeAdapter = (opts) => { made.push(opts); return { name: 'fake', start() {}, async stop() {} }; };
-  const app = createApp({ port, demo, keyStore, groqStore, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
+  const app = createApp({ port, demo, keyStore, groqStore, speechProvider, restarter, extensionFile: __filename, makeAdapter, memory: mem.memory, consentStore: cs.store, approvals: apps.approvals,
     activity: apps.activity, serviceFile: null, log: (m) => logs.push(m), reply: async () => ({ reply: 'ok' }) });
   await new Promise((r) => app.server.listen(port, '127.0.0.1', r));
   t.after(async () => { await app.close(); mem.cleanup(); cs.cleanup(); apps.cleanup(); });
@@ -173,4 +173,44 @@ test('desktop Groq key is independent of camera and environment keys', async (t)
   assert.equal(groq.value, null);
   assert.equal(camera.value, KEY);
   assert.equal((await api('/api/state')).json.ai.connected, false);
+});
+
+test('voice routes require local UI authorization and a key; demo cannot send audio', async (t) => {
+  const { api, port } = await boot(t, { keyStore: fakeKeyStore() });
+  for (const action of ['transcribe', 'reply', 'speak']) {
+    const path = '/api/voice/' + action;
+    assert.equal((await request(port, { path, method: 'POST', body: {} })).status, 401);
+    assert.equal((await api(path, {})).status, 409);
+  }
+  const demo = await boot(t, { demo: true, keyStore: fakeKeyStore(), groqStore: fakeKeyStore(KEY) });
+  assert.equal((await demo.api('/api/voice/transcribe', {})).status, 409);
+});
+
+test('Groq audio goes through the server and a voice turn never opens the camera', async (t) => {
+  const calls = [];
+  const speechProvider = require('../../src/voice/groq').createSpeechProvider(async (url, opts) => {
+    calls.push(url);
+    assert.equal(opts.headers.authorization, 'Bearer ' + KEY);
+    if (url.endsWith('/transcriptions')) {
+      assert.equal(opts.body.get('model'), 'whisper-large-v3');
+      assert.equal(await opts.body.get('file').text(), 'synthetic audio');
+      return Response.json({ text: 'hello' });
+    }
+    assert.deepEqual(JSON.parse(opts.body), { input: 'ok', model: 'canopylabs/orpheus-v1-english', voice: 'troy', response_format: 'wav' });
+    return new Response(Buffer.from([1, 2, 3]));
+  });
+  const { app, api, port, made } = await boot(t, { keyStore: fakeKeyStore(), groqStore: fakeKeyStore(KEY), speechProvider });
+  const audio = (body, type) => fetch('http://127.0.0.1:' + port + '/api/voice/transcribe', {
+    method: 'POST', headers: { 'x-attune-token': app.guard.token, 'content-type': type }, body,
+  });
+  assert.equal((await audio('bad', 'text/plain')).status, 415);
+  assert.equal((await audio('', 'audio/webm')).status, 400);
+  assert.equal((await audio(Buffer.alloc(2100000), 'audio/webm')).status, 413);
+  const transcript = await (await audio('synthetic audio', 'audio/webm')).json();
+  assert.equal(transcript.text, 'hello');
+  assert.equal((await api('/api/voice/reply', transcript)).json.reply, 'ok');
+  assert.equal((await api('/api/voice/speak', { text: 'x'.repeat(200) })).status, 400);
+  assert.equal((await api('/api/voice/speak', { text: 'ok' })).status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(made.length, 0);
 });
