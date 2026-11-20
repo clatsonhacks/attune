@@ -3,9 +3,9 @@
 > The instruction set an AI loads so it can use Attune's live, interpreted body-context. It pairs with the
 > local MCP server (`get_attune_status`, `get_body_context`, `record_correction`, `memory_*`).
 >
-> **Opt-in only.** The user enables Attune in their own connector config (`ATTUNE_CONSENT`). You cannot grant
-> or widen consent, and there is no tool for it. If a tool says `consent_required`, carry on normally and,
-> if relevant, tell the user they can enable it themselves.
+> **Opt-in only.** The user enables Attune in the Attune app itself. You cannot grant or widen consent or approve
+> a purpose, and there is no tool for it. If a tool says `consent_required`, `purpose_not_approved` or
+> `attune_not_running`, carry on normally and, if relevant, tell the user they can enable it themselves in Attune.
 
 ## What this gives you
 A felt sense of the person you're talking to, from a standard webcam (via Presage SmartSpectra), turned into
@@ -18,7 +18,7 @@ check in,"* never "HR 92."
    pulled when you call them; context is not pushed into the chat.
 2. **If `say` is true**, let `directive` shape your tone and pacing this turn. You may adapt
    `suggestedUtterance` in your own words. Be **tentative and correctable** ("I might be off, but…").
-3. **If `state` is `"unclear"`, `"consent_required"` or `"unavailable"`**, **say nothing about their body.**
+3. **If `state` is `"unclear"`, `"starting"`, `"paused"`, `"consent_required"`, `"unavailable"` or `"attune_not_running"`**, **say nothing about their body.**
    Never guess. Carry on normally.
 4. **Never read raw vitals aloud** and never imply diagnosis. Attune reports coarse arousal/engagement
    *signals that can be wrong* — not emotions, not health, not lie-detection.

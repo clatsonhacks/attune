@@ -6,10 +6,10 @@ Describes what is in the repo today. The target design and milestones are in
 ## Components
 
 ```text
-            human (web UI)                         human (connector config: ATTUNE_CONSENT)
-                 │ grant / revoke                                   │
-                 ▼                                                  ▼
-        src/privacy/consent.js  ◄── the only consent authority ──►  (parsed at connector start)
+            human (web UI of the Attune service)            AI app ─stdio─► src/server.js (thin connector)
+                 │ grant / revoke, approvals                                  │ Bearer token from service.json
+                 ▼                                                            ▼
+        src/privacy/consent.js  ◄── the only consent authority      /connector/v1/* (same process as the UI)
                  │ onChange
                  ▼
           src/sensing.js ── starts/stops ──► src/adapter/isolated.js ═IPC═► worker.js ► smartspectra.js ◄── camera
@@ -21,7 +21,7 @@ Describes what is in the repo today. The target design and milestones are in
           src/contextBridge.js  (seq, TTL, dedupe, coalescing; reads need a capability)
                  │ getApprovedContext(cap) / subscribe(cap)
                  ▼
-          AI consumers: companion (web), MCP connector, (M4) voice — only with aiSharing
+          AI consumers: companion (web), connectors via /connector/v1, (M4) voice — only with aiSharing
           Human UI (/api/state): measurements + full Insight text, only while sensing is active
 ```
 
@@ -30,8 +30,9 @@ Describes what is in the repo today. The target design and milestones are in
 | `src/privacy/consent.js` | Scopes `sensing` (needs `presageAck`), `aiSharing`, `memory`, `diagnostics`; all off by default. |
 | `src/sensing.js` | Sensor lifecycle `idle → starting → active → stopped` / `error`. Generation counter drops late callbacks. |
 | `src/privacy/localGuard.js` | Web backend guard: Host allowlist (DNS rebinding), Origin check, per-boot session token. |
-| `src/webServer.js` | Local demo backend, `127.0.0.1` only. `createApp()` is importable for tests. |
-| `src/server.js` | Stdio MCP connector. `createConnectorCore()` holds the logic; no AI-callable consent tool. Lazy sensor start, idle stop. |
+| `src/webServer.js` | The Attune service, `127.0.0.1` only: UI API, the authenticated connector API (`/connector/v1/*`), `service.json`. The only process that opens the camera. `createApp()` is importable for tests. |
+| `src/paths.js` | Per-user data folder (`ATTUNE_DATA_DIR` or the OS default, `demo/` subfolder), one-time copy of legacy repo-root files, atomic writes. |
+| `src/server.js` | Thin stdio MCP connector: only the MCP SDK, zod and Node built-ins. Finds the service via `service.json`, calls the connector API; no camera, SDK or consent code and no consent/approval/forget tool. |
 | `src/adapter/isolated.js` + `worker.js` | Real SDK runs in a child process; allowlisted IPC, minimal env, crash → `error`. |
 | `src/insights/decoder.js` | Presage `Insight` protobuf (schema from Presage docs; the SDK ships no decoder). |
 | `src/insights/normalizer.js` | Full text for the human; number-free, non-medical ≤160-char note for the AI. |
@@ -64,4 +65,4 @@ A live run with a face in view has not been recorded yet.
 
 ## Baseline (plan M0-04), 18 Nov 2026, before the M1 changes
 `npm install` ✓ · `npm run demo` ✓ · `test-connector.js` ✓ · `test-adapter.js` ✓. After M1: `npm test` runs
-54 `node:test` cases plus both legacy checks, all passing (as of M3).
+54 `node:test` cases plus both legacy checks, all passing (as of M3). After the service/connector split: 134.
