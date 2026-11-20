@@ -115,11 +115,15 @@
             </section>
             <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
               <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
-            <div class="voice-bar"><button type="button" class="mini" id="voiceToggle">Start live voice</button>
+            <div class="voice-bar"><button type="button" class="mini voice-toggle" id="voiceToggle" aria-label="Start live voice" title="Start live voice" aria-describedby="voiceNotice">
+                <svg class="ic voice-start" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-3 0h6"/></svg>
+                <svg class="ic voice-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+              </button>
               <button type="button" class="mini" id="claudeVoiceSetup">Claude voice</button>
               <button type="button" class="mini" id="voicePlayback" hidden>Enable speaker</button>
               <select id="voiceMic" aria-label="Voice microphone" hidden><option value="">Default microphone</option></select>
-              <span id="voiceStatus" role="status"></span></div>
+              <span id="voiceNotice">Live mic to OpenAI · API charges apply</span>
+              <span id="voiceStatus" role="status"></span><button type="button" class="linkish" id="voiceKeySetup" hidden>Open API Keys</button></div>
             <form id="chatForm" class="composer">
               <input id="msg" autocomplete="off" placeholder="Say something…" />
               <button type="submit" aria-label="Send"><svg class="ic" aria-hidden="true"><use href="assets/icons.svg#i-send"/></svg></button>

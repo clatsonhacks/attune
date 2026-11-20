@@ -6,6 +6,14 @@
   const toggle = $('voiceToggle'), mic = $('voiceMic'), playback = $('voicePlayback'), status = $('voiceStatus');
   let active = null, latestCue = '';
 
+  function showCallState(started) {
+    toggle.classList.toggle('active', started);
+    toggle.title = started ? 'Stop live voice' : 'Start live voice';
+    toggle.setAttribute('aria-label', toggle.title);
+    $('voiceNotice').hidden = started;
+    $('voiceKeySetup').hidden = true;
+  }
+
   function stop(message = '') {
     const call = active;
     active = null;
@@ -18,7 +26,7 @@
       call.audio.pause();
       call.audio.srcObject = null;
     }
-    toggle.textContent = 'Start live voice';
+    showCallState(false);
     playback.hidden = mic.hidden = true;
     status.textContent = message;
   }
@@ -128,12 +136,16 @@
     if (active) return stop('Live voice ended.');
     if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) return stop('Live voice requires a microphone and WebRTC.');
     if (lastState?.mode === 'demo') return stop('Start Attune in real mode to use live voice.');
-    if (!setup.hasOpenAI) { switchView('keys'); $('openaiStatus').textContent = 'Add an OpenAI key to use live voice.'; return; }
-    if (!confirm('Start live voice with OpenAI? Your microphone streams continuously until you end the call. OpenAI API charges apply. If camera sensing and AI sharing are enabled, Attune can start sensing and share the current pacing cue.')) return;
+    if (typeof setup.hasOpenAI !== 'boolean') return stop('Key settings unavailable. Reload Attune to try again.');
+    if (!setup.hasOpenAI) {
+      stop(setup.desktop ? 'Add your OpenAI key to start voice.' : 'Set OPENAI_API_KEY and restart the web service to use voice.');
+      $('voiceKeySetup').hidden = !setup.desktop;
+      return;
+    }
 
     const call = { abort: new AbortController(), audio: new Audio(), confirmedCue: null, userBubbles: new Map(), cues: new Map() };
     active = call;
-    toggle.textContent = 'End live voice';
+    showCallState(true);
     status.textContent = 'Opening microphone…';
     try {
       const stream = await microphone('');
@@ -185,6 +197,7 @@
   }
 
   toggle.onclick = start;
+  $('voiceKeySetup').onclick = () => { stop(); switchView('keys'); $('openaiInput').focus(); };
   for (const button of document.querySelectorAll('.navitem, #claudeVoiceSetup, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) {
     button.addEventListener('click', () => stop());
   }

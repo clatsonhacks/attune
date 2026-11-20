@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "attune-sense",
   "display_name": "Attune",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Lets Claude read how you seem right now (calm, tense, tired) from the Attune app on this computer, as gentle guidance, never raw numbers. Attune must be open; camera sensing, sharing and each purpose are allowed by you in Attune.",
   "long_description": "Attune is a body-sense companion that runs on your computer. This extension connects Claude Desktop to the running Attune app: Claude can ask for interpreted, number-free context (for example \"slow down and check in\") for a purpose you have approved, record your corrections and keep short notes if you enabled memory. The extension has no camera or sensing code of its own and cannot grant consent or approve a purpose; only you can, in Attune. If Attune is not running, every tool answers that it is not running and nothing else happens. Non-medical; not a diagnosis.",
   "author": { "name": "Attune" },

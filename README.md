@@ -33,7 +33,7 @@ To add sensing, allow camera sensing and AI sharing in Attune and enable the com
 
 ## Live voice inside Attune
 
-In real mode, add your OpenAI API key under **API Keys**, then choose **Companion ? Start live voice**. Your microphone streams to OpenAI while the assistant speaks. Speak over a reply to interrupt it. **End live voice**, leaving the companion, or hiding the window closes the call and releases the microphone. Text chat continues to use Groq.
+In real mode, add your OpenAI API key under **API Keys**, then click the microphone in **Companion**. Your microphone streams to OpenAI while the assistant speaks. Speak over a reply to interrupt it. Click the stop square to end the call and release the microphone. Leaving Companion or hiding the window also ends the call. Text chat continues to use Groq.
 
 The service exchanges a WebRTC offer for an answer using your encrypted key. The audio connection is between your device and OpenAI. The local display receives transcripts and can update the current pacing cue only while sensing and AI sharing are enabled. Live voice uses OpenAI API billing and requires Realtime model access. Browser-only installs can set `OPENAI_API_KEY` before launch. [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc)
 

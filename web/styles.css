@@ -28,6 +28,7 @@ button, input, textarea, select { font-family:inherit; }
 .ic { width:20px; height:20px; flex:none; display:inline-block; vertical-align:middle; }
 .ic.sm { width:16px; height:16px; }
 button { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+button[hidden] { display:none !important; }
 html,body { height:100%; }
 body {
   margin:0; color:var(--ink);
@@ -453,7 +454,11 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .key-card [role=status] { margin-left: 8px; color: var(--muted); }
 
 .voice-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
-.voice-bar [role=status] { font-size:13px; color:var(--muted); }
+.voice-bar [role=status], #voiceNotice { font-size:13px; color:var(--muted); }
+.voice-bar .voice-toggle { width:40px; height:40px; padding:0; border-radius:50%; background:var(--ink); color:white; flex:none; }
+.voice-toggle.active { background:#a83935; }
+.voice-toggle .voice-stop, .voice-toggle.active .voice-start { display:none; }
+.voice-toggle.active .voice-stop { display:block; }
 
 .vitals-instruction { flex:none; border-left:3px solid var(--accent); background:rgba(255,255,255,.4); padding:9px 13px; margin-bottom:10px; border-radius:0 10px 10px 0; }
 .vitals-instruction h3 { margin:0 0 3px; font-size:13px; color:var(--accent); }
