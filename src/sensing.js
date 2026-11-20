@@ -11,7 +11,7 @@
  */
 
 /**
- * autoStart: true  — the camera runs whenever the `sensing` scope is granted (MCP connector behaviour).
+ * autoStart: true  — the camera runs whenever the `sensing` scope is granted.
  * autoStart: false — permission only: the camera starts when request() is called (chat started, AI asked),
  *                    and pause()/idle stop it without touching consent. Revoking consent always stops it.
  */

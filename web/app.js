@@ -168,10 +168,8 @@ function copyConnectorText(text, label) {
 
 function renderClaudeSetup(meta, connector) {
   if (connector.registered) {
-    const consent = connector.consent;
     meta.append(el('span', null, connector.pointsToThisInstall
-      ? 'Registered in Claude Desktop. Camera sensing ' + (consent.sensing ? 'on' : 'off') +
-        ', AI sharing ' + (consent.aiSharing ? 'on' : 'off') + ', memory ' + (consent.memory ? 'on.' : 'off.')
+      ? 'Registered in Claude Desktop. Camera sensing, AI sharing and memory follow your choices here in Attune.'
       : 'Claude Desktop already has an Attune entry for another installation. Review it in Claude Desktop.'));
     return;
   }
@@ -232,9 +230,9 @@ function renderChatGPTSetup(meta, connector) {
       'Then select the tunnel in ChatGPT under Add custom MCP server.'),
     connectorLink('OpenAI tunnel setup guide', 'https://developers.openai.com/api/docs/guides/secure-mcp-tunnels'),
     copyConnectorText(connector.command, 'Copy server command'),
-    el('span', null, 'To allow sensing and sharing, set ATTUNE_CHATGPT_CONSENT=sensing,presage-ack,ai-sharing in the local tunnel client environment. ' +
-      'ChatGPT can then request readings, which can turn on the camera. It receives interpreted context. ' +
-      'Presage receives physiological measurements for Insights. Stop the tunnel client to disconnect.'));
+    el('span', null, 'Keep Attune open while you use it. ChatGPT gets nothing until you allow a purpose for it below, ' +
+      'and only while camera sensing and AI sharing are on in Attune. It can then request readings, which can turn on the camera. ' +
+      'It receives interpreted context. Presage receives physiological measurements for Insights. Stop the tunnel client to disconnect.'));
   const connect = connectorLink('Connect ChatGPT', 'https://chatgpt.com/plugins');
   connect.addEventListener('click', () => { setup.open = true; });
   meta.append(connect, setup);
@@ -258,8 +256,8 @@ async function loadConnectors() {
       if (connector.id === 'other') {
         const setup = el('details', 'conn-setup');
         setup.append(el('summary', null, 'Show MCP configuration JSON'),
-          el('span', null, 'For clients that support local stdio MCP. The example allows camera sensing and interpreted AI sharing. ' +
-            'Presage receives physiological measurements for Insights. Remove ATTUNE_CONSENT to keep sensing and sharing off.'),
+          el('span', null, 'For clients that support local stdio MCP. The connector talks to Attune while it is open; ' +
+            'camera sensing, AI sharing and the purposes each app may use are set here in Attune. Presage receives physiological measurements for Insights.'),
           copyConnectorText(connector.snippet, 'Copy JSON'));
         meta.append(setup);
       }
@@ -282,7 +280,7 @@ async function loadConnectors() {
 // Only the person decides here; an AI can ask for a purpose (shown as a pending request) but never approve one.
 const KNOWN_APPS = { 'claude-desktop': 'Claude Desktop', chatgpt: 'ChatGPT' };
 const SHORT_LENS = { companion: 'Companion' };
-let lenses = [], appsData = { apps: [], pending: [] }, appsSig = '';
+let lenses = [], appsData = { apps: [], pending: [], lastSeen: {} }, appsSig = '';
 const lensById = (id) => lenses.find((l) => l.id === id);
 const lensName = (id) => (lensById(id) || {}).name || id || 'an unknown purpose';
 const appEntry = (id) => appsData.apps.find((a) => a.id === id);
@@ -297,8 +295,8 @@ async function refreshApps(force = false) {
   let r;
   try { r = await api('/api/apps'); } catch { return; }
   if (!r || !Array.isArray(r.apps)) return;
-  const next = { apps: r.apps, pending: Array.isArray(r.pending) ? r.pending : [] };
-  // Also rebuild once a minute so "5 min ago" on a pending request stays right.
+  const next = { apps: r.apps, pending: Array.isArray(r.pending) ? r.pending : [], lastSeen: r.lastSeen && typeof r.lastSeen === 'object' ? r.lastSeen : {} };
+  // Also rebuild once a minute so "5 min ago" on a pending request or a connection stays right.
   const sig = JSON.stringify(next) + ':' + Math.floor(Date.now() / 60000);
   if (!force && sig === appsSig) return;
   appsData = next; appsSig = sig;
@@ -440,15 +438,24 @@ function purposesBlock(app) {
   return box;
 }
 
+/** "Connected — seen 2 min ago" (the app's connector reached Attune since it opened), or "Not seen yet". */
+function seenLine(id) {
+  const at = (appEntry(id) || {}).lastSeenAt || appsData.lastSeen[id];
+  const when = at ? relTime(at) : '';
+  return el('small', at ? 'seen on' : 'seen', when ? `Connected — seen ${when}` : 'Not seen yet');
+}
+
 function renderApps() {
   renderPending();
   const others = appsData.apps.filter((a) => !a.builtin && !KNOWN_APPS[a.id]);
   for (const slot of $('connList').querySelectorAll('.purposes-slot')) {
     const app = appEntry(slot.dataset.app);
+    const strict = slot.dataset.app === 'chatgpt'; // the ChatGPT profile gets nothing without an explicit approval
     keepFocus(slot, () => {
-      if (app && !app.builtin) slot.replaceChildren(purposesBlock(app));
-      else slot.replaceChildren(el('span', 'p-default', `Until you choose, it may use ${lensName('companion')} only. ` +
-        'If it asks for another purpose, the request shows up here.'));
+      if (app && !app.builtin) slot.replaceChildren(seenLine(slot.dataset.app), purposesBlock(app));
+      else slot.replaceChildren(seenLine(slot.dataset.app), el('span', 'p-default', strict
+        ? 'Until you choose, it may use no purpose. When it asks for one, the request shows up here.'
+        : `Until you choose, it may use ${lensName('companion')} only. If it asks for another purpose, the request shows up here.`));
     });
   }
   const list = $('appList');
@@ -459,7 +466,7 @@ function renderApps() {
       const avatar = el('div', 'cava');
       avatar.innerHTML = icon('bot');
       const meta = el('div', 'cmeta');
-      meta.append(el('b', null, app.name), purposesBlock(app));
+      meta.append(el('b', null, app.name), seenLine(app.id), purposesBlock(app));
       row.append(avatar, meta);
       return row;
     }));

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { createConsent, parseConsentString } = require('../../src/privacy/consent');
+const { createConsent } = require('../../src/privacy/consent');
 
 test('all scopes are off by default', () => {
   const c = createConsent();
@@ -38,12 +38,4 @@ test('withdrawing the Presage acknowledgement also stops sensing', () => {
   c.grant({ sensing: true, presageAck: true });
   c.grant({ presageAck: false });
   assert.strictEqual(c.has('sensing'), false);
-});
-
-test('consent string parsing is explicit — unknown words grant nothing', () => {
-  assert.deepStrictEqual(parseConsentString('sensing, presage-ack ai-sharing'),
-    { sensing: true, presageAck: true, aiSharing: true, memory: false, diagnostics: false });
-  assert.deepStrictEqual(parseConsentString('yes please everything'),
-    { sensing: false, presageAck: false, aiSharing: false, memory: false, diagnostics: false });
-  assert.strictEqual(parseConsentString(undefined).sensing, false);
 });

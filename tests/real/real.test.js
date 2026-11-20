@@ -107,11 +107,15 @@ test('connector status reads the Claude Desktop config without exposing other se
     const none = claudeDesktopStatus(file);
     assert.strictEqual(none.status, 'not_registered');
     assert.ok(!JSON.stringify(none).includes('s3cret'));
-    fs.writeFileSync(file, JSON.stringify({ mcpServers: { 'attune-sense': { command: 'node', args: [SERVER_JS], env: { ATTUNE_CONSENT: 'sensing,presage-ack' } } } }));
-    const ok = claudeDesktopStatus(file);
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { 'attune-sense': { command: 'node', args: [SERVER_JS], env: { ATTUNE_APP_ID: 'claude-desktop' } } } }));
+    const ok = claudeDesktopStatus(file, { lastSeenAt: '2026-11-20T10:00:00.000Z' });
     assert.strictEqual(ok.status, 'registered');
     assert.strictEqual(ok.pointsToThisInstall, true);
-    assert.deepStrictEqual(ok.consent, { sensing: true, aiSharing: false, memory: false });
+    assert.strictEqual(ok.lastSeenAt, '2026-11-20T10:00:00.000Z');
+    assert.ok(!('consent' in ok)); // consent lives in Attune, not in the host config
+    assert.strictEqual(claudeDesktopStatus(file).lastSeenAt, null);
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { 'attune-sense': { command: 'node', args: [path.join(dir, 'attune', 'src', 'server.js')] } } }));
+    assert.strictEqual(claudeDesktopStatus(file).pointsToThisInstall, false);
     fs.writeFileSync(file, '{ not json');
     assert.strictEqual(claudeDesktopStatus(file).status, 'unreadable');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -134,7 +138,11 @@ test('Claude registration creates an entry and preserves existing configuration'
   assert.strictEqual(config.theme, original.theme);
   assert.deepStrictEqual(config.mcpServers.other, original.mcpServers.other);
   assert.deepStrictEqual(config.mcpServers['attune-sense'].args, [SERVER_JS]);
-  assert.deepStrictEqual(claudeDesktopStatus(existing).consent, { sensing: true, aiSharing: true, memory: false });
+  assert.deepStrictEqual(config.mcpServers['attune-sense'].env, { ATTUNE_APP_ID: 'claude-desktop' }); // no consent in the host config
+  assert.strictEqual(claudeDesktopStatus(existing).pointsToThisInstall, true);
+  const { snippet } = require('../../src/connectors');
+  assert.ok(!/ATTUNE_CONSENT/.test(snippet()));
+  assert.deepStrictEqual(JSON.parse(snippet()).mcpServers['attune-sense'].args, [SERVER_JS]);
 
   assert.match(registerClaudeDesktop(existing).error, /already has an Attune entry/);
   assert.strictEqual(fs.readFileSync(existing, 'utf8'), written);

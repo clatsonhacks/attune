@@ -1,7 +1,7 @@
 'use strict';
 /*
- * Trusted consent state. Only the local human-facing UI (or a config file the human wrote) may call
- * grant()/revoke(); nothing an AI can call reaches this module.
+ * Trusted consent state. Only the local human-facing UI of the Attune service may call grant()/revoke();
+ * nothing an AI or a connector can call reaches this module.
  *
  * Scopes are separate and all off by default:
  *   sensing     — camera + SmartSpectra may run. Requires presageAck (the Presage-processing disclosure).
@@ -71,20 +71,4 @@ function createConsent() {
   return { grant, revoke, has, snapshot, onChange };
 }
 
-/**
- * Parse a human-written consent string, e.g. ATTUNE_CONSENT="sensing,presage-ack,ai-sharing".
- * Used by the stdio MCP connector, where the human's config file is the trusted surface.
- */
-function parseConsentString(str) {
-  const parts = String(str || '').split(/[\s,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const set = new Set(parts);
-  return {
-    sensing: set.has('sensing'),
-    presageAck: set.has('presage-ack'),
-    aiSharing: set.has('ai-sharing'),
-    memory: set.has('memory'),
-    diagnostics: set.has('diagnostics'),
-  };
-}
-
-module.exports = { createConsent, parseConsentString, SCOPES };
+module.exports = { createConsent, SCOPES };

@@ -1,15 +1,15 @@
 'use strict';
 /*
  * Local Claude Desktop registration and setup details for other MCP clients.
+ * The registered connector (src/server.js) is a thin client of the running Attune app: consent and approvals are
+ * given in Attune itself, so the entry carries no consent settings — only ATTUNE_APP_ID for Claude Desktop.
  */
 const fs = require('fs');
 const { randomUUID } = require('crypto');
 const os = require('os');
 const path = require('path');
-const { parseConsentString } = require('./privacy/consent');
 
 const SERVER_JS = path.resolve(__dirname, 'server.js');
-const DEFAULT_CONSENT = 'sensing,presage-ack,ai-sharing';
 
 /**
  * The Microsoft Store build of Claude Desktop keeps its data in %LOCALAPPDATA%\Claude-Data\claude_<publisher-id>\
@@ -38,7 +38,7 @@ function claudeDesktopConfigPath(platform = process.platform, env = process.env,
 
 // appId pins the identity the connector uses for lens approvals (src/privacy/appApprovals.js).
 function connectorEntry(command = 'node', appId) {
-  return { command, args: [SERVER_JS], env: { ATTUNE_CONSENT: DEFAULT_CONSENT, ...(appId ? { ATTUNE_APP_ID: appId } : {}) } };
+  return { command, args: [SERVER_JS], ...(appId ? { env: { ATTUNE_APP_ID: appId } } : {}) };
 }
 
 function snippet() {
@@ -94,9 +94,12 @@ function registerClaudeDesktop(configPath = claudeDesktopConfigPath()) {
   }
 }
 
-/** Status of the Claude Desktop registration. Never returns other servers' settings or secrets. */
-function claudeDesktopStatus(configPath = claudeDesktopConfigPath()) {
-  const base = { id: 'claude-desktop', name: 'Claude Desktop' };
+/**
+ * Status of the Claude Desktop registration: whether an entry exists and points to this install, plus when the
+ * connector last reached the running service (lastSeenAt). Never returns other servers' settings or secrets.
+ */
+function claudeDesktopStatus(configPath = claudeDesktopConfigPath(), { lastSeenAt = null } = {}) {
+  const base = { id: 'claude-desktop', name: 'Claude Desktop', lastSeenAt };
   let current;
   try { current = readClaudeConfig(configPath); } catch { return { ...base, status: 'unreadable', registered: false }; }
   if (current.raw === null) return { ...base, status: 'no_config', registered: false };
@@ -104,7 +107,6 @@ function claudeDesktopStatus(configPath = claudeDesktopConfigPath()) {
   if (!entry) return { ...base, status: 'not_registered', registered: false };
   const [name, config] = entry;
   const s = config || {};
-  const consent = parseConsentString(s.env && s.env.ATTUNE_CONSENT);
   const pointsHere = Array.isArray(s.args) && s.args.some((a) => path.resolve(String(a)) === SERVER_JS);
   return {
     ...base,
@@ -112,15 +114,15 @@ function claudeDesktopStatus(configPath = claudeDesktopConfigPath()) {
     registered: true,
     serverName: name,
     pointsToThisInstall: pointsHere,
-    consent: { sensing: consent.sensing && consent.presageAck, aiSharing: consent.aiSharing, memory: consent.memory },
   };
 }
 
-function connectorsStatus() {
+/** lastSeenAt(appId) → ISO time the app's connector last called the service, or null. */
+function connectorsStatus({ lastSeenAt = () => null, configPath } = {}) {
   return {
     connectors: [
-      claudeDesktopStatus(),
-      { id: 'chatgpt', name: 'ChatGPT', command: 'node "' + SERVER_JS + '" --chatgpt' },
+      claudeDesktopStatus(configPath, { lastSeenAt: lastSeenAt('claude-desktop') }),
+      { id: 'chatgpt', name: 'ChatGPT', command: 'node "' + SERVER_JS + '" --chatgpt', lastSeenAt: lastSeenAt('chatgpt') },
       { id: 'other', name: 'Other AI clients', snippet: snippet() },
     ],
   };
