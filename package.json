@@ -13,7 +13,8 @@
     "web": "node src/webServer.js",
     "test": "node --test \"tests/**/*.test.js\" && node test-adapter.js && node test-connector.js",
     "web:demo": "node src/webServer.js --demo",
-    "build:icons": "node scripts/build-icons.js"
+    "build:icons": "node scripts/build-icons.js",
+    "build:extension": "node scripts/build-extension.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
