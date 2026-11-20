@@ -11,3 +11,7 @@ node_modules/
 .attune-demo-apps.json
 .attune-activity.jsonl
 .attune-demo-activity.jsonl
+
+# Claude Desktop extension build (npm run build:extension)
+dist/
+extension/server/

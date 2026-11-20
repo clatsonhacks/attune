@@ -1,0 +1,19 @@
+{
+  "name": "attune-sense-extension",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Claude Desktop extension (MCPB) for Attune: the thin MCP connector packaged on its own. Built by npm run build:extension at the repo root.",
+  "type": "commonjs",
+  "main": "server/index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  }
+}
