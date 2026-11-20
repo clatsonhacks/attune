@@ -454,3 +454,10 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 
 .voice-bar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
 .voice-bar [role=status] { font-size:14px; color:var(--muted); }
+
+.vitals-instruction { flex:none; border-left:3px solid var(--accent); background:rgba(255,255,255,.4); padding:9px 13px; margin-bottom:10px; border-radius:0 10px 10px 0; }
+.vitals-instruction h3 { margin:0 0 3px; font-size:14px; color:var(--accent); }
+.vitals-instruction p { margin:0; line-height:1.4; max-height:6em; overflow:auto; overflow-wrap:anywhere; }
+.turn-instruction { font-size:14px; margin-top:6px; }
+.turn-instruction summary { cursor:pointer; color:var(--muted); }
+.turn-instruction p { margin:5px 0 0; }

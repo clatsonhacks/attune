@@ -79,7 +79,7 @@
       status.textContent = 'Thinking…';
       const response = await (await request(t, 'reply', { text })).json();
       check(t);
-      addMsg(response.reply, 'bot', { by: response.usedBody });
+      addMsg(response.reply, 'bot', { by: response.usedBody, instruction: response.vitalsInstruction });
       status.textContent = 'Speaking…';
       for (const part of segments(response.reply)) {
         const data = await (await request(t, 'speak', { text: part })).arrayBuffer();

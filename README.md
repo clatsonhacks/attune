@@ -21,6 +21,10 @@ On first launch, **API Keys** asks which features you want to enable. Add your o
 
 For a judge walkthrough with synthetic readings and scripted replies, run `npm run desktop:demo` instead of `npm start`. Demo uses a separate data folder and needs no accounts or keys. Quit any running Attune instance from the tray before switching modes. To try Claude installation from a fresh checkout, run `npm run build:extension`, then open **Connectors** in Attune. The Windows installer already includes the extension.
 
+### Show the vitals instruction in a demo
+
+Run `npm run desktop:demo`. In Companion, allow simulated sensing and select **Share with the AI**. The panel above the conversation shows the current vitals instruction for the next reply. Watch it change as the simulated readings change, or switch modes to show another lens. Send a message and expand **Vitals instruction for this reply** beneath the response to inspect the instruction captured for that turn. Demo replies are scripted and stay local.
+
 ## Talk to the companion
 
 In real mode, add your Groq key under **API Keys**. Open **Companion**, select **Start voice**, and accept the microphone disclosure. Speak, then pause for about a second or choose **Send now**. Attune shows the transcript, speaks its reply, and listens again. Use **Interrupt** to take the next turn during a reply. Select **End voice** to stop. Leaving the companion or hiding the window also ends the session.

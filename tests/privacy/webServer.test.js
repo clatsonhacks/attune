@@ -169,3 +169,29 @@ test('UI libraries are served locally from an allowlist; style nonce is fresh pe
   assert.ok(a.headers['content-security-policy'].includes(`'nonce-${nonceOf(a)}'`));
   assert.ok(!/unsafe-inline/.test(a.headers['content-security-policy']));
 });
+
+test('live vitals instruction matches the selected lens for a reply and clears on pause or revoke', async (t) => {
+  const { api, calls, replies } = await boot(t);
+  const { bodyNote } = require('../../src/companion');
+  assert.equal((await api('/api/state')).json.vitalsInstruction, null);
+  await api('/api/consent', { sensing: true, presageAck: true });
+  calls.callbacks[0](SAMPLE);
+  assert.equal((await api('/api/state')).json.vitalsInstruction, null);
+  await api('/api/consent', { aiSharing: true });
+  for (const lens of ['companion', 'yoga', 'casual']) {
+    await api('/api/mode', { lens });
+    calls.callbacks[0](SAMPLE);
+    const state = (await api('/api/state')).json;
+    const chat = (await api('/api/chat', { message: 'hi' })).json;
+    const ctx = replies.at(-1);
+    assert.equal(ctx.lens, lens);
+    assert.ok(chat.vitalsInstruction);
+    assert.equal(state.vitalsInstruction, bodyNote(ctx));
+    assert.equal(chat.vitalsInstruction, state.vitalsInstruction);
+  }
+  await api('/api/sensing', { action: 'pause' });
+  assert.equal((await api('/api/state')).json.vitalsInstruction, null);
+  await api('/api/sensing', { action: 'resume' });
+  await api('/api/revoke', { scopes: ['aiSharing'] });
+  assert.equal((await api('/api/state')).json.vitalsInstruction, null);
+});

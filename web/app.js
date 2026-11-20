@@ -700,6 +700,16 @@ function addMsg(text, who, opts = {}) {
     fix.onclick = async () => { await api('/api/correction', { wasAccurate: false }); fix.textContent = "thanks — I'll be gentler"; fix.disabled = true; };
     el.appendChild(fix);
   }
+  if ('instruction' in opts) {
+    const details = document.createElement('details');
+    details.className = 'turn-instruction';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Vitals instruction for this reply';
+    const note = document.createElement('p');
+    note.textContent = opts.instruction || 'No vitals instruction for this turn.';
+    details.append(summary, note);
+    el.appendChild(details);
+  }
   const stick = who === 'user' || follow;
   $('log').appendChild(el);
   if (stick) scrollToLatest(); else $('jumpLatest').hidden = false;
@@ -724,6 +734,16 @@ async function poll() {
     proposeMood(moodFor(s));
     const active = s.sensing && s.sensing.state === 'active';
     const errored = s.sensing && s.sensing.state === 'error';
+    let instruction = s.vitalsInstruction;
+    if (!instruction) {
+      if (!c.sensing) instruction = 'Camera sensing is off. The companion has no vitals instruction.';
+      else if (!c.aiSharing) instruction = 'AI sharing is off. Your readings stay out of the companion prompt.';
+      else if (s.sensing.paused) instruction = 'Camera paused. No current vitals instruction.';
+      else if (errored) instruction = 'Camera unavailable. No current vitals instruction.';
+      else if (!active) instruction = 'Waiting for the camera to start.';
+      else instruction = 'Waiting for a fresh reading.';
+    }
+    if ($('vitalsInstruction').textContent !== instruction) $('vitalsInstruction').textContent = instruction;
     renderCamera(s, c, active, errored);
     renderSetupCam(s);
     if (s.lensMode && s.lensMode !== lensMode && !modeBusy) { lensMode = s.lensMode; renderModeSeg(); syncPacer(); }
@@ -741,6 +761,7 @@ async function poll() {
     if (s.ai) renderAi(s.ai);
     lastState = s;
   } catch (e) {
+    $('vitalsInstruction').textContent = 'Current vitals instruction unavailable.';
     if (!(e instanceof TypeError && /fetch/i.test(e.message)) && !/stale session token/.test(e.message)) console.error('poll failed:', e);
   }
 }
@@ -877,7 +898,7 @@ $('chatForm').onsubmit = async (e) => {
   try { r = await api('/api/chat', { message: text }); } catch { r = { error: 'offline', errorText: "Can't reach Attune's local server." }; }
   $('msg').disabled = false; $('msg').focus();
   if (r.error) addMsg(r.errorText || 'The AI could not reply.', 'sys');
-  else addMsg(r.reply, 'bot', { by: r.usedBody });
+  else addMsg(r.reply, 'bot', { by: r.usedBody, instruction: r.vitalsInstruction });
   if (r.ai) renderAi(r.ai);
   if (lastState) proposeMood(moodFor({ ...lastState, state: r.state || lastState.state }), true);
 };

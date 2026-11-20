@@ -29,7 +29,7 @@ const path = require('path');
 const { createSession } = require('./session');
 const { createMemory, defaultMemoryFile } = require('./memory');
 const { createAdapter, isDemo } = require('./adapter');
-const { createCompanion, groqKey } = require('./companion');
+const { createCompanion, groqKey, bodyNote } = require('./companion');
 const { connectorsStatus, registerClaudeDesktop } = require('./connectors');
 const { createConsent } = require('./privacy/consent');
 const { createLocalGuard } = require('./privacy/localGuard');
@@ -252,10 +252,16 @@ function createApp({
     });
   }
 
+  function companionContext() {
+    return consent.has('aiSharing') && sensingActive()
+      ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
+  }
+
   function statePayload() {
     const c = consent.snapshot();
     const s = sensing.status();
     const base = {
+      vitalsInstruction: bodyNote(companionContext()),
       mode: demo ? 'demo' : 'real', lensMode, ai: companion.status(), consent: { ...c, remembered: !!consentStore.load() },
       sensing: { state: s.state, error: s.error, errorCode: s.errorCode, adapter: adapterName, simulated, camera: s.camera,
         paused, lastTrigger, idleInMs: idleAt ? Math.max(0, idleAt - Date.now()) : null },
@@ -440,9 +446,9 @@ function createApp({
         if (url === '/api/voice/reply') {
           const { text } = await readBody(req);
           if (typeof text !== 'string' || !text.trim()) return sendJSON(res, 400, { error: 'Empty voice turn.' });
-          const ctx = consent.has('aiSharing') && sensingActive() ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
+          const ctx = companionContext();
           const out = await (reply || companion.reply)({ message: text.slice(0, 4000), ctx, signal, voice: true });
-          return sendJSON(res, out.error ? 502 : 200, out);
+          return sendJSON(res, out.error ? 502 : 200, { ...out, vitalsInstruction: bodyNote(ctx) });
         }
         if (url === '/api/voice/speak') {
           const { text } = await readBody(req);
@@ -498,9 +504,9 @@ function createApp({
       else if (sensingActive()) touchIdle();
       // Immediate cache read from the Context Bridge — never waits on the SDK or an Insight.
       const share = consent.has('aiSharing') && sensingActive();
-      const ctx = share ? bridge.getLensContext(ensureCompanionCap(), lensMode) : NO_CONTEXT;
+      const ctx = companionContext();
       const out = await (reply || companion.reply)({ message: String(message || '').slice(0, 4000), ctx, onBodyRequest: consent.has('aiSharing') ? bodyRequest : undefined });
-      return sendJSON(res, 200, { ...out, state: ctx.state, aiSharing: share, ai: companion.status() });
+      return sendJSON(res, 200, { ...out, vitalsInstruction: bodyNote(ctx), state: ctx.state, aiSharing: share, ai: companion.status() });
     }
     if (method === 'POST' && url === '/api/chat/reset') {
       companion.reset();

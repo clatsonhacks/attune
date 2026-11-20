@@ -108,7 +108,7 @@
                 <span class="insight-status" id="insightStatus"></span>
               </div>
               <div class="nudge" id="nudgeBox" hidden>
-                <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>whisper to the AI</div>
+                <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Detected change</div>
                 <div id="directive"></div>
                 <div class="evidence" id="evidence"></div>
               </div>
@@ -122,6 +122,10 @@
 
           <section class="conversation glass">
             <div class="conv-head"><span>Companion</span><div class="seg mode-icons" id="modeSeg" role="radiogroup" aria-label="Companion mode"></div><span class="ai-status" id="aiStatus" hidden></span><button class="mini" id="newChat" title="Start a new conversation"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>New chat</button></div>
+            <section class="vitals-instruction" aria-labelledby="vitalsTitle">
+              <h3 id="vitalsTitle">Vitals instruction for the next reply</h3>
+              <p id="vitalsInstruction">Waiting for Attune?</p>
+            </section>
             <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
               <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
             <div class="voice-bar"><button type="button" class="mini" id="voiceToggle">Start voice</button>
