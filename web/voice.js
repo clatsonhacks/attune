@@ -35,7 +35,7 @@
       t.player?.stop();
     }
     if (context) { context.close().catch(() => {}); context = null; }
-    toggle.textContent = 'Start voice';
+    toggle.textContent = 'Groq voice';
     action.hidden = mic.hidden = true;
     status.textContent = message;
   }
@@ -175,7 +175,7 @@
     beginTurn();
   }
   mic.onchange = interrupt;
-  for (const button of document.querySelectorAll('.navitem, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) button.addEventListener('click', () => stop());
+  for (const button of document.querySelectorAll('.navitem, #claudeVoiceSetup, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) button.addEventListener('click', () => stop());
   $('chatForm').addEventListener('submit', () => stop());
   document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
   window.addEventListener('pagehide', () => stop());

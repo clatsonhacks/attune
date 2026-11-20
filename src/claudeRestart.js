@@ -61,6 +61,16 @@ const realOps = {
  */
 function createClaudeRestarter({ platform = process.platform, ops = realOps, timeoutMs = 10000, pollMs = 250 } = {}) {
   let busy = false;
+  const launchPackage = (pkg) => ops.launch('explorer.exe', [`shell:AppsFolder\\${pkg.packageFamilyName}!Claude`]);
+  async function open() {
+    if (platform !== 'win32') return { ok: false, code: 501, error: 'Open Claude Desktop from your applications.' };
+    try {
+      const pkg = await ops.storePackage();
+      if (!pkg) return { ok: false, code: 404, error: 'Microsoft Store Claude Desktop was not found. Open Claude from your applications.' };
+      await launchPackage(pkg);
+      return { ok: true };
+    } catch { return { ok: false, code: 500, error: 'Open Claude Desktop from your applications.' }; }
+  }
   async function restart() {
     if (platform !== 'win32') return { ok: false, code: 501, relaunched: false, error: 'Restarting Claude Desktop from Attune is only available on Windows. Quit and reopen Claude yourself.' };
     if (busy) return { ok: false, code: 409, relaunched: false, error: 'Claude Desktop is already restarting.' };
@@ -83,7 +93,7 @@ function createClaudeRestarter({ platform = process.platform, ops = realOps, tim
         await ops.sleep(pollMs);
       }
 
-      await ops.launch('explorer.exe', [`shell:AppsFolder\\${pkg.packageFamilyName}!Claude`]);
+      await launchPackage(pkg);
       return { ok: true, relaunched: true, build, stopped: targets.length };
     } catch {
       return { ok: false, code: 500, relaunched: false, error: 'Could not restart Claude Desktop. Quit it yourself and open it again.' };
@@ -91,7 +101,7 @@ function createClaudeRestarter({ platform = process.platform, ops = realOps, tim
       busy = false;
     }
   }
-  return { restart, supported: platform === 'win32' };
+  return { open, restart, supported: platform === 'win32' };
 }
 
 module.exports = { createClaudeRestarter, selectTargets };

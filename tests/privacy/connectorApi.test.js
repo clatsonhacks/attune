@@ -265,3 +265,25 @@ test('explicit vital requests cannot retrieve measurements, notes or correction 
   assert.ok(!JSON.stringify((await conn('memory?app=other-client')).json).includes('bpm'));
   assert.equal((await ui('/api/state')).json.pulseBpm, 72);
 });
+
+test('Claude conversation turns read fresh cues from one continuous sensing session', async (t) => {
+  const { conn, ui, calls } = await boot(t);
+  const app = 'claude-desktop';
+  const read = async () => (await conn('context', { app, purpose: 'yoga' })).json;
+  assert.equal((await read()).state, 'consent_required');
+  assert.equal(calls.started, 0);
+  await ui('/api/consent', ALLOW);
+  await ui('/api/apps/lens', { app, lens: 'yoga', allow: true });
+  const feed = rate => calls.callbacks[0]({ ...SAMPLE, breathingRate: rate, breathingConfidence: 0.99 });
+  feed(18);
+  const first = await read();
+  feed(6);
+  const second = await read();
+  assert.ok(first.directive && second.directive);
+  assert.notEqual(first.directive, second.directive);
+  assert.equal(calls.started, 1);
+  assert.equal(calls.stopped, 0);
+  await ui('/api/sensing', { action: 'pause' });
+  assert.equal((await read()).state, 'paused');
+  assert.equal(calls.started, 1);
+});

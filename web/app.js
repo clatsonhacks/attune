@@ -180,7 +180,21 @@ function copyConnectorText(text, label) {
   return block;
 }
 
+$('claudeVoiceSetup').onclick = () => {
+  switchView('connectors');
+  $('claudeVoiceGuide').open = true;
+  $('claudeVoiceGuide').querySelector('summary').focus();
+};
+$('openClaudeVoice').onclick = async () => {
+  $('openClaudeVoice').disabled = true;
+  try {
+    const result = await api('/api/connectors/claude/open', {});
+    $('claudeVoiceStatus').textContent = result.ok ? 'Select the sound-wave icon in Claude to start talking.' : result.error;
+  } catch { $('claudeVoiceStatus').textContent = 'Could not open Claude Desktop.'; }
+  finally { $('openClaudeVoice').disabled = false; }
+};
 function renderClaudeSetup(meta, connector, options) {
+  $('openClaudeVoice').hidden = !options.openClaudeAvailable;
   if (options.extensionAvailable) {
     const install = el('a', 'cbtn', 'Install in Claude');
     install.href = '/downloads/attune.mcpb';

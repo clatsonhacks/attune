@@ -24,3 +24,13 @@ test('restart selects only Claude.exe inside the current Store package', async (
   assert.deepEqual(stopped, [1]);
   assert.deepEqual(launches, [['explorer.exe', ['shell:AppsFolder\\Claude_abcdefgh!Claude']]]);
 });
+
+test('opening Claude activates the Store app without restarting it', async () => {
+  const launches = [];
+  const service = createClaudeRestarter({ platform: 'win32', ops: {
+    storePackage: async () => ({ packageFamilyName: 'Claude_abcdefgh' }),
+    launch: async (...args) => launches.push(args),
+  } });
+  assert.deepEqual(await service.open(), { ok: true });
+  assert.deepEqual(launches, [['explorer.exe', ['shell:AppsFolder\\Claude_abcdefgh!Claude']]]);
+});

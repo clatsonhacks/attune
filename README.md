@@ -25,9 +25,15 @@ For a judge walkthrough with synthetic readings and scripted replies, run `npm r
 
 Run `npm run desktop:demo`. In Companion, allow simulated sensing and select **Share with the AI**. The panel above the conversation shows the current vitals instruction for the next reply. Watch it change as the simulated readings change, or switch modes to show another lens. Send a message and expand **Vitals instruction for this reply** beneath the response to inspect the instruction captured for that turn. Demo replies are scripted and stay local.
 
-## Talk to the companion
+## Hands-free conversation with Claude Desktop
 
-In real mode, add your Groq key under **API Keys**. Open **Companion**, select **Start voice**, and accept the microphone disclosure. Speak, then pause for about a second or choose **Send now**. Attune shows the transcript, speaks its reply, and listens again. Use **Interrupt** to take the next turn during a reply. Select **End voice** to stop. Leaving the companion or hiding the window also ends the session.
+Open **Claude voice** in Attune for connector setup. Once connected, open a new chat in Claude Desktop and choose its sound-wave icon. Speak normally and interrupt by talking again. Claude handles microphone input and playback with your Claude account. This flow requires no Groq key. [Claude voice mode](https://support.claude.com/en/articles/11101966-use-voice-mode)
+
+To add sensing, allow camera sensing and AI sharing in Attune and enable the companion purpose for Claude. Say "Use Attune companion guidance before your replies. Keep talking while sensing warms up." Opening a Claude chat alone sends no event to Attune. An approved context request can start sensing after consent. SmartSpectra keeps sampling across turns and each request reads the latest cached guidance. Pause or revoke in Attune to stop sensing. The usual idle timeout applies after connector activity stops.
+
+## Talk to the built-in Groq companion
+
+In real mode, add your Groq key under **API Keys**. Open **Companion**, select **Groq voice**, and accept the microphone disclosure. Speak, then pause for about a second or choose **Send now**. Attune shows the transcript, speaks its reply, and listens again. Use **Interrupt** to take the next turn during a reply. Select **End voice** to stop. Leaving the companion or hiding the window also ends the session.
 
 Voice sends recorded turns to Groq for [Whisper transcription](https://console.groq.com/docs/speech-to-text), sends the transcript to the companion model, and sends reply text to Groq for [Orpheus English speech](https://console.groq.com/docs/text-to-speech). Your Groq account needs access to all three models. Attune keeps the audio in memory during processing. Camera sensing is optional. Voice uses fresh context only when sensing is already active and AI sharing is allowed. Voice works with the camera off or paused. If audio fails, you can keep using text chat.
 

@@ -586,7 +586,7 @@ function createApp({
 
     if (method === 'GET' && url === '/api/connectors') return sendJSON(res, 200, {
       ...connectorsStatus({ lastSeenAt: (id) => lastSeen.get(id) || null }),
-      extensionAvailable: fs.existsSync(extensionFile), restartAvailable: restarter.supported && !demo, desktop,
+      openClaudeAvailable: restarter.supported, extensionAvailable: fs.existsSync(extensionFile), restartAvailable: restarter.supported && !demo, desktop,
     });
     if (method === 'GET' && url === '/downloads/attune.mcpb') {
       let bundle;
@@ -595,6 +595,10 @@ function createApp({
       res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="attune.mcpb"',
         'x-content-type-options': 'nosniff' });
       return res.end(bundle);
+    }
+    if (method === 'POST' && url === '/api/connectors/claude/open') {
+      const result = await restarter.open();
+      return sendJSON(res, result.code || 200, result);
     }
     if (method === 'POST' && url === '/api/connectors/claude/restart') {
       if (demo) return sendJSON(res, 403, { error: 'Restart is unavailable in demo mode.' });
