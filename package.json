@@ -1,6 +1,6 @@
 {
   "name": "attune-sense",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "private": true,
   "description": "Attune \u00e2\u20ac\u201d a portable body-sense MCP connector for AI. Interprets contactless vitals (Presage SmartSpectra) into behavioral nudges, not numbers. Prototype scaffold.",
   "type": "commonjs",

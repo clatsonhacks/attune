@@ -180,11 +180,6 @@ function copyConnectorText(text, label) {
   return block;
 }
 
-$('claudeVoiceSetup').onclick = () => {
-  switchView('connectors');
-  $('claudeVoiceGuide').open = true;
-  $('claudeVoiceGuide').querySelector('summary').focus();
-};
 $('openClaudeVoice').onclick = async () => {
   $('openClaudeVoice').disabled = true;
   try {

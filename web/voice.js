@@ -198,7 +198,7 @@
 
   toggle.onclick = start;
   $('voiceKeySetup').onclick = () => { stop(); switchView('keys'); $('openaiInput').focus(); };
-  for (const button of document.querySelectorAll('.navitem, #claudeVoiceSetup, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) {
+  for (const button of document.querySelectorAll('.navitem, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) {
     button.addEventListener('click', () => stop());
   }
   $('chatForm').addEventListener('submit', () => stop());

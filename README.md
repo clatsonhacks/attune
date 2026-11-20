@@ -27,13 +27,13 @@ Run `npm run desktop:demo`. In Companion, allow simulated sensing and select **S
 
 ## Hands-free conversation with Claude Desktop
 
-Open **Claude voice** in Attune for connector setup. Once connected, open a new chat in Claude Desktop and choose its sound-wave icon. Speak normally and interrupt by talking again. Claude handles microphone input and playback with your Claude account. This flow requires no Groq key. [Claude voice mode](https://support.claude.com/en/articles/11101966-use-voice-mode)
+Open **Connectors** and expand **Talk with Claude Desktop** for connector setup. Once connected, open a new chat in Claude Desktop and choose its sound-wave icon. Speak normally and interrupt by talking again. Claude handles microphone input and playback with your Claude account. This flow requires no Groq key. [Claude voice mode](https://support.claude.com/en/articles/11101966-use-voice-mode)
 
 To add sensing, allow camera sensing and AI sharing in Attune and enable the companion purpose for Claude. Say "Use Attune companion guidance before your replies. Keep talking while sensing warms up." Opening a Claude chat alone sends no event to Attune. An approved context request can start sensing after consent. SmartSpectra keeps sampling across turns and each request reads the latest cached guidance. Pause or revoke in Attune to stop sensing. The usual idle timeout applies after connector activity stops.
 
 ## Live voice inside Attune
 
-In real mode, add your OpenAI API key under **API Keys**, then click the microphone in **Companion**. Your microphone streams to OpenAI while the assistant speaks. Speak over a reply to interrupt it. Click the stop square to end the call and release the microphone. Leaving Companion or hiding the window also ends the call. Text chat continues to use Groq.
+In real mode, add your OpenAI API key under **API Keys**, then click the microphone inside the **Companion** message box. Your microphone streams to OpenAI while the assistant speaks. Speak over a reply to interrupt it. Click the stop square to end the call and release the microphone. Leaving Companion or hiding the window also ends the call. Text chat continues to use Groq.
 
 The service exchanges a WebRTC offer for an answer using your encrypted key. The audio connection is between your device and OpenAI. The local display receives transcripts and can update the current pacing cue only while sensing and AI sharing are enabled. Live voice uses OpenAI API billing and requires Realtime model access. Browser-only installs can set `OPENAI_API_KEY` before launch. [OpenAI WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc)
 
