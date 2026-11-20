@@ -17,12 +17,12 @@ const snap = (o = {}) => ({
 });
 const NO_NUMBERS = (out) => !('breathsPerMin' in out) && !('targetBreathsPerMin' in out) && !('pace' in out);
 
-test('yoga is listed and declares that it shares numbers', () => {
+test('yoga is listed as guidance only for connectors', () => {
   const l = listLenses().find((x) => x.id === 'yoga');
   assert.ok(l);
   assert.strictEqual(l.name, 'Yoga & breathwork');
   assert.deepStrictEqual(l.needs, ['breathing']);
-  assert.strictEqual(l.sharesNumbers, true);
+  assert.strictEqual(l.sharesNumbers, false);
 });
 
 test('faster than the default target guides a longer exhale', () => {

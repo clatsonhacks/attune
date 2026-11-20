@@ -88,12 +88,16 @@ function createMemory(filePath = defaultMemoryFile()) {
       _persist();
     },
     /** A compact summary the AI loads at the start of a conversation. */
-    summary({ lastN = 3 } = {}) {
+    summary({ lastN = 3, connector = false } = {}) {
       const sessions = data.sessions.slice(-lastN).map((s) => ({
         startedAt: s.startedAt,
         moments: s.events
           .filter((e) => e.type === 'state' || e.type === 'correction')
-          .map((e) => e.note || e.state)
+          .map((e) => {
+            if (!connector) return e.note || e.state;
+            if (e.type === 'correction') return 'feedback received';
+            return ['elevated', 'neutral', 'unclear', 'end'].includes(e.state) ? e.state : 'check-in';
+          })
           .slice(-6),
       }));
       return { sessionsRemembered: data.sessions.length, recent: sessions };

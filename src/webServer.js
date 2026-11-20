@@ -45,6 +45,8 @@ const { storeFile, writeFileAtomic } = require('./paths');
 
 const { createSpeechProvider, VoiceError } = require('./voice/groq');
 
+const { connectorGuidance } = require('./connectorGuidance');
+
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 // Third-party UI libraries, served from node_modules (no CDN, works offline). Explicit allowlist only.
@@ -330,12 +332,12 @@ function createApp({
     }
     if (paused) {
       recordFor(app, { kind: 'context', lens: lens.id, state: 'paused', say: false });
-      return { ...NO_CONTEXT, lens: lens.id, state: 'paused' };
+      return connectorGuidance(lens.id, 'paused');
     }
     const st = await wake('ai_requested'); // respects pause and idle; never waits for frames
     if (st.state === 'error') {
       recordFor(app, { kind: 'context', lens: lens.id, state: 'unavailable', say: false });
-      return { state: 'unavailable', say: false, error: st.error };
+      return { state: 'unavailable', say: false };
     }
     let ctx;
     if (st.state !== 'active') ctx = { ...NO_CONTEXT, lens: lens.id, state: 'starting' };
@@ -346,12 +348,13 @@ function createApp({
       if (ctx.state === 'off') ctx = { ...ctx, state: 'starting' };
     }
     recordFor(app, { kind: ctx.state === 'purpose_not_approved' ? 'denied' : 'context', lens: lens.id, state: ctx.state, say: !!ctx.say });
-    return ctx;
+    return connectorGuidance(lens.id, ctx.state);
   }
 
   async function handleConnector(req, res, method, route, query) {
     const denied = connectorDenied(req);
     if (denied) return sendJSON(res, denied.code, { error: denied.error });
+    res.setHeader('x-attune-privacy', 'guidance-only');
     if (!CONNECTOR_ROUTES.has(`${method} ${route}`)) return sendJSON(res, 404, { error: 'not found' });
     const body = method === 'POST' ? await readBody(req) : {};
     const q = new URLSearchParams(query);
@@ -363,16 +366,17 @@ function createApp({
     if (route === 'status') return sendJSON(res, 200, connectorStatus(app, strict));
     if (route === 'purposes') {
       const ok = approvedFor(app, strict);
-      return sendJSON(res, 200, { app, purposes: listLenses().map(({ id, name, description, sharesNumbers }) => ({ id, name, description, sharesNumbers, approved: ok.includes(id) })) });
+      return sendJSON(res, 200, { app, purposes: listLenses().map(({ id, name, description }) => ({ id, name, description, sharesNumbers: false, approved: ok.includes(id) })) });
     }
     if (route === 'context') return sendJSON(res, 200, await connectorContext(app, body, strict));
     if (route === 'correction') {
       if (!sensingActive()) return sendJSON(res, 200, { ok: false, reason: 'sensing is not active' });
-      return sendJSON(res, 200, session.recordCorrection({ wasAccurate: body.wasAccurate === true }));
+      session.recordCorrection({ wasAccurate: body.wasAccurate === true });
+      return sendJSON(res, 200, { ok: true });
     }
     if (method === 'GET') { // memory
       if (!consent.has('memory') || !consent.has('aiSharing')) return sendJSON(res, 200, { memory: 'disabled', reason: 'Memory and sharing with AI apps must both be on in Attune.' });
-      return sendJSON(res, 200, memory.summary());
+      return sendJSON(res, 200, memory.summary({ connector: true }));
     }
     if (typeof body.note !== 'string' || !body.note.trim()) return sendJSON(res, 400, { error: 'note must be a non-empty string' });
     if (!consent.has('memory')) return sendJSON(res, 200, { ok: false, reason: 'Memory is off in Attune.' });

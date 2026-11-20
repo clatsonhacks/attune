@@ -180,7 +180,7 @@ test('approved: the service starts the camera; the connector gets number-free co
   assert.strictEqual((await svc.ui('/api/state')).sensing.lastTrigger, 'ai_requested');
   svc.calls.callbacks[2](SAMPLE);
   const ctx = await call('get_body_context', { purpose: 'companion' });
-  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'lens', 'say', 'state', 'suggestedUtterance']);
+  assert.deepStrictEqual(Object.keys(ctx).sort(), ['directive', 'lens', 'say', 'state']);
   assert.ok(!/\d{2,}/.test(JSON.stringify({ ...ctx, confidence: 0 })));
   assert.notStrictEqual((await call('record_correction', { wasAccurate: false })).ok, false);
   const events = svc.apps.activity.recent(10);
@@ -260,6 +260,7 @@ test('connector core: a demo service is tried after the real one; --demo uses on
   const fetchFn = async (url) => { seen.push(url); return { status: 200, json: async () => ({ attune: 'running', url }) }; };
   fs.writeFileSync(path.join(dataDir, 'demo', 'service.json'), JSON.stringify({ version: 1, port: 4321, token: 'c'.repeat(64) }));
   const core = connector.createConnector({ env: { ATTUNE_DATA_DIR: dataDir }, fetchFn });
+  assert.equal((await core.getBodyContext({ purpose: 'yoga' })).state, 'update_required');
   assert.match((await core.status()).url, /^http:\/\/127\.0\.0\.1:4321\/connector\/v1\/status\?app=claude-desktop$/);
   fs.writeFileSync(path.join(dataDir, 'service.json'), JSON.stringify({ version: 1, port: 1234, token: 'd'.repeat(64) }));
   assert.match((await core.status()).url, /:1234\//);

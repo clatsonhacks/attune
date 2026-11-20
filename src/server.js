@@ -108,6 +108,10 @@ function createConnector({ env = process.env, demoOnly = false, chatgpt = false,
       try {
         const res = await fetchFn(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
         if (res.status === 401 || res.status === 403) continue; // stale file from another run: try the next one
+        if (route !== 'status' && res.headers?.get('x-attune-privacy') !== 'guidance-only') {
+          await res.body?.cancel();
+          return { state: 'update_required', say: false, howToEnable: 'Update the Attune service to use privacy-protected connector guidance.' };
+        }
         const json = await res.json();
         if (json && typeof json === 'object') return json;
       } catch { /* not running, timed out, or not Attune: try the next one */ }
@@ -146,9 +150,7 @@ async function main() {
     {
       description:
         'Call before a reply. Pass the purpose that matches the task: emotional support → "companion" (default), ' +
-        'breathing or yoga practice → "yoga", light conversation → "casual". Returns {lens, state, say, directive, ' +
-        'suggestedUtterance, confidence} — interpreted guidance, never measurements unless that purpose explicitly ' +
-        'shares them. If say=true let directive shape your tone (be tentative, invite correction). If state is "unclear", ' +
+        'breathing or yoga practice → "yoga", light conversation → "casual". Returns action cues only. If asked for vitals, explain that measurements are private to Attune. If say=true let directive shape your tone (be tentative, invite correction). If state is "unclear", ' +
         '"starting", "paused", "consent_required", "unavailable" or "attune_not_running", say nothing about the body. You cannot approve a purpose yourself: if state ' +
         'is "purpose_not_approved", tell the user they can allow it in Attune (see howToEnable) and carry on without it; ' +
         'if "unknown_purpose", pick one of availablePurposes. Non-medical; not a diagnosis; not lie-detection.',

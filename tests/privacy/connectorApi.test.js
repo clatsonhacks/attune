@@ -147,7 +147,7 @@ test('approved: the service wakes the camera; first call says starting, then num
   await ui('/api/sensing', { action: 'pause' });
   assert.strictEqual(calls.stopped, 1);
   const paused = (await conn('context', { app: 'test-app' })).json;
-  assert.deepStrictEqual(paused, { state: 'paused', say: false, directive: null, suggestedUtterance: null, confidence: 0, lens: 'companion' });
+  assert.deepStrictEqual(paused, { state: 'paused', say: false, directive: null, lens: 'companion' });
   assert.strictEqual(calls.started, 1); // pause is respected: no new start
   await ui('/api/sensing', { action: 'resume' });
   assert.strictEqual(calls.started, 2);
@@ -155,7 +155,7 @@ test('approved: the service wakes the camera; first call says starting, then num
   assert.strictEqual(starting.state, 'starting'); // active, but no sample yet
   calls.callbacks[1](SAMPLE);
   const ctx = (await conn('context', { app: 'test-app', purpose: 'companion' })).json;
-  assert.deepStrictEqual(Object.keys(ctx).sort(), ['confidence', 'directive', 'lens', 'say', 'state', 'suggestedUtterance']);
+  assert.deepStrictEqual(Object.keys(ctx).sort(), ['directive', 'lens', 'say', 'state']);
   assert.strictEqual(ctx.lens, 'companion');
   assert.ok(!JSON.stringify(ctx).includes('72'));
   assert.strictEqual(calls.started, 2);
@@ -199,7 +199,8 @@ test('unknown and unapproved purposes: refused, camera untouched, pending reques
   await ui('/api/sensing', { action: 'resume' });
   calls.callbacks[1](SAMPLE);
   const ok = (await conn('context', { app: 'test-app', purpose: 'test-api-lens' })).json;
-  assert.strictEqual(ok.marker, 'test-api-lens');
+  assert.equal(ok.lens, 'test-api-lens');
+  assert.equal(ok.marker, undefined);
   assert.deepStrictEqual((await conn('status?app=test-app')).json.approvedPurposes, ['companion', 'test-api-lens']);
 });
 
@@ -245,4 +246,22 @@ test('apps list shows when each connected app was last seen', async (t) => {
   assert.ok(!Number.isNaN(Date.parse(r.apps.find((a) => a.id === 'claude-desktop').lastSeenAt)));
   assert.deepStrictEqual(Object.keys(r.lastSeen).sort(), ['claude-desktop', 'other-app']);
   assert.strictEqual(r.apps[0].lastSeenAt, null);
+});
+
+test('explicit vital requests cannot retrieve measurements, notes or correction thresholds through an approved lens', async (t) => {
+  const { conn, ui, calls, mem } = await boot(t);
+  await ui('/api/consent', { ...ALLOW, memory: true });
+  const sample = { ...SAMPLE, breathingRate: 23, breathingConfidence: 0.93 };
+  calls.callbacks[0](sample);
+  for (const app of ['claude-desktop', 'chatgpt', 'other-client']) {
+    await ui('/api/apps/lens', { app, lens: 'yoga', allow: true });
+    const result = await conn('context', { app, purpose: 'yoga', strict: true, fields: ['pulseBpm', 'breathsPerMin'], includeRaw: true });
+    assert.deepEqual(result.json, { lens: 'yoga', state: 'guidance', say: true,
+      directive: 'Gently invite a longer exhale and let them set a comfortable pace.' });
+    assert.equal((await conn('purposes?app=' + app)).json.purposes.some(p => p.sharesNumbers), false);
+    assert.deepEqual((await conn('correction', { app, wasAccurate: false })).json, { ok: true });
+  }
+  mem.memory.append({ type: 'state', state: 'neutral', note: 'pulse 72 bpm, breathing 23/min' });
+  assert.ok(!JSON.stringify((await conn('memory?app=other-client')).json).includes('bpm'));
+  assert.equal((await ui('/api/state')).json.pulseBpm, 72);
 });

@@ -91,6 +91,7 @@ One neutral reading, many **lenses** (companion, yoga, casual, …). The AI pass
 `get_body_context` (default `companion`) and can see the options with `list_purposes`, but only **you** decide
 which app may use which lens, in **Attune → Connectors**. An app that asks for a lens you have not allowed gets
 `purpose_not_approved` (the camera does not start) and its request shows up as pending for you to allow or deny.
+Every connector receives action cues only. Pulse, breathing rate, HRV, confidence scores and raw Insight text stay out of connector responses, including approved yoga requests.
 Apps you never configured may use `companion` only (ChatGPT: nothing until you allow it). Changes apply to the next
 call, without restarting the client. The Connectors page shows when each app last reached Attune.
 

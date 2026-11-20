@@ -67,12 +67,13 @@ function proposeMood(m, immediate = false) {
 }
 
 /* ---------- Views ---------- */
-const TITLES = { home: 'Companion', memory: 'Memory', keys: 'API Keys', connectors: 'Connectors', activity: 'Activity' };
+const TITLES = { home: 'Companion', sensing: 'Sensing details', memory: 'Memory', keys: 'API Keys', connectors: 'Connectors', activity: 'Activity' };
 let currentView = 'home';
 function switchView(v) {
   if (currentView === 'keys' && v !== 'keys') {
     for (const id of ['camera', 'groq']) { $(id + 'Input').value = ''; $(id + 'Save').disabled = true; }
   }
+  $(v === 'sensing' ? 'detailSignals' : 'homeSignals').append($('signals'));
   currentView = v;
   document.querySelectorAll('.navitem').forEach((n) => {
     n.classList.toggle('active', n.dataset.view === v);
@@ -88,6 +89,16 @@ function switchView(v) {
 }
 document.querySelectorAll('.navitem').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
+function openSensing() {
+  switchView('sensing');
+  $('backFromSensing').focus();
+}
+$('openSensing').onclick = $('readInstruction').onclick = openSensing;
+$('backFromSensing').onclick = () => { switchView('home'); $('openSensing').focus(); };
+$('homeToggle').onclick = () => {
+  const show = $('view-home').classList.toggle('show-sensing');
+  $('homeToggle').textContent = show ? 'Show chat' : 'Show sensing';
+};
 /* ---------- Private mode ---------- */
 $('incognito').onchange = async (e) => {
   const r = await api('/api/incognito', { on: e.target.checked });
@@ -374,7 +385,6 @@ function renderPending() {
       const lens = lensById(p.lens);
       const sub = el('small', null, `${relTime(p.at)}${lens ? ' · ' + lens.description : ''}`);
       text.append(line, sub);
-      if (lens && lens.sharesNumbers) text.append(numNote(true));
       const status = el('span', 'pending-status');
       status.setAttribute('role', 'status');
       text.append(status);
@@ -407,12 +417,7 @@ function renderPending() {
   });
 }
 
-function numNote(long = false) {
-  const n = el('span', 'num-note');
-  n.innerHTML = icon('breathing', 'sm');
-  n.append(long ? 'Shares breathing numbers (breaths per minute)' : 'Shares breathing numbers');
-  return n;
-}
+
 
 /** Toggles for the lenses one app may use, plus "Remove app". */
 function purposesBlock(app) {
@@ -448,7 +453,6 @@ function purposesBlock(app) {
     input.dataset.fkey = `lens:${app.id}:${lens.id}`;
     const txt = el('span', 'ltxt');
     txt.append(el('b', null, lens.name), el('small', null, lens.description));
-    if (lens.sharesNumbers) txt.append(numNote());
     input.onchange = async () => {
       input.disabled = true;
       status.textContent = '';
@@ -682,7 +686,8 @@ function showDetail(a) {
 }
 $('signals').addEventListener('click', (e) => {
   const b = e.target.closest('.sig'); if (!b) return;
-  selectedSignal = selectedSignal === b.dataset.id ? null : b.dataset.id;
+  selectedSignal = currentView === 'sensing' && selectedSignal === b.dataset.id ? null : b.dataset.id;
+  if (currentView === 'home') openSensing();
   if (!selectedSignal) { $('signalDetail').hidden = true; updateSlot(); }
   else { const a = lastSignals.find((x) => x.id === selectedSignal); if (a) showDetail(a); }
   renderSignals(lastSignals);
@@ -744,6 +749,9 @@ async function poll() {
       else instruction = 'Waiting for a fresh reading.';
     }
     if ($('vitalsInstruction').textContent !== instruction) $('vitalsInstruction').textContent = instruction;
+    $('fullVitals').textContent = instruction;
+    const preview = $('vitalsInstruction');
+    $('readInstruction').hidden = preview.scrollHeight <= preview.clientHeight + 1;
     renderCamera(s, c, active, errored);
     renderSetupCam(s);
     if (s.lensMode && s.lensMode !== lensMode && !modeBusy) { lensMode = s.lensMode; renderModeSeg(); syncPacer(); }
@@ -995,7 +1003,6 @@ function renderSetupCam(s) {
 /* Camera key row (sidebar, desktop app only): replace or remove the saved key. */
 /* ---------- boot ---------- */
 scrollArea($('logHost'), $('log'));
-scrollArea($('slotHost'), $('slot'));
 scrollArea(document.querySelector('#consentDlg .dlg'));
 scrollArea(document.querySelector('#setupDlg .dlg'));
 scrollArea($('dayDetail'));

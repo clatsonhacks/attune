@@ -34,6 +34,7 @@
       <header class="topbar">
         <div class="tleft">
           <div class="htitle" id="htitle">Companion</div>
+          <button class="mini home-toggle" id="homeToggle" type="button">Show sensing</button>
         </div>
         <div class="controls">
           <span id="camPill" class="pill cam-pill" hidden title="The camera is on"><span class="rec"></span>Camera on</span>
@@ -97,22 +98,8 @@
               <div class="breath-cue" id="breathCue" hidden aria-live="off"></div>
               <div class="cam-hint" id="camHint" hidden></div>
             </div>
-            <div class="signals" id="signals"></div>
-            <div class="scroll-host slot-host" id="slotHost"><div class="slot" id="slot">
-              <div class="slot-empty" id="slotEmpty">Tap a signal to see how it's read.</div>
-              <div class="signal-detail" id="signalDetail" hidden></div>
-              <div class="insight" id="insightBox" hidden>
-                <div class="insight-head"><span class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Check-in</span><span id="insightMeta"></span></div>
-                <div id="insightText" class="insight-text">No check-in yet — Presage sends one automatically after about 15 seconds.</div>
-                <button class="mini" id="askInsight"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Ask for a check-in</button>
-                <span class="insight-status" id="insightStatus"></span>
-              </div>
-              <div class="nudge" id="nudgeBox" hidden>
-                <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Detected change</div>
-                <div id="directive"></div>
-                <div class="evidence" id="evidence"></div>
-              </div>
-            </div></div>
+            <div id="homeSignals"><div class="signals" id="signals"></div></div>
+            <button type="button" class="mini" id="openSensing">Sensing details</button>
             <button id="consentBtn" class="cta"><svg class="ic" aria-hidden="true"><use id="consentIcon" href="assets/icons.svg#i-consent"/></svg><span id="consentLabel">Allow camera sensing</span></button>
             <button class="linkish" id="forgetConsent" hidden>Forget camera permission</button>
             <p class="fineprint warn" id="sensorError" hidden></p>
@@ -124,7 +111,7 @@
             <div class="conv-head"><span>Companion</span><div class="seg mode-icons" id="modeSeg" role="radiogroup" aria-label="Companion mode"></div><span class="ai-status" id="aiStatus" hidden></span><button class="mini" id="newChat" title="Start a new conversation"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>New chat</button></div>
             <section class="vitals-instruction" aria-labelledby="vitalsTitle">
               <h3 id="vitalsTitle">Vitals instruction for the next reply</h3>
-              <p id="vitalsInstruction">Waiting for Attune?</p>
+              <button class="linkish" id="readInstruction" hidden>Read full instruction</button><p id="vitalsInstruction">Waiting for Attune?</p>
             </section>
             <div class="scroll-host log-host" id="logHost"><div id="log" class="log"></div>
               <button class="jump" id="jumpLatest" hidden><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-down"/></svg>Latest</button></div>
@@ -139,6 +126,29 @@
             <p class="hint" id="aiDisclosure" hidden>Your messages are sent to Groq's API to get a reply. Body guidance is added only if you allowed AI sharing — never numbers or video.</p>
             <p class="hint" id="hint" hidden>Demo mode (simulated vitals, scripted replies): wait for <b>elevated</b> (the mock cycles calm → stress → recovery), then say “I’m fine”.</p>
           </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-sensing" hidden>
+        <div class="connectors glass">
+          <button class="mini" id="backFromSensing">Back to Companion</button>
+          <div id="detailSignals"></div>
+            <div class="sensing-info" id="slot">
+              <div class="slot-empty" id="slotEmpty">Tap a signal to see how it's read.</div>
+              <div class="signal-detail" id="signalDetail" hidden></div>
+              <div class="insight" id="insightBox" hidden>
+                <div class="insight-head"><span class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Check-in</span><span id="insightMeta"></span></div>
+                <div id="insightText" class="insight-text">No check-in yet — Presage sends one automatically after about 15 seconds.</div>
+                <button class="mini" id="askInsight"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-companion"/></svg>Ask for a check-in</button>
+                <span class="insight-status" id="insightStatus"></span>
+              </div>
+              <div class="nudge" id="nudgeBox" hidden>
+                <div class="nudge-label"><svg class="ic sm" aria-hidden="true"><use href="assets/icons.svg#i-sparkles"/></svg>Detected change</div>
+                <div id="directive"></div>
+                <div class="evidence" id="evidence"></div>
+              </div>
+            </div>
+          <h3>Current vitals instruction</h3><p id="fullVitals"></p>
         </div>
       </section>
 

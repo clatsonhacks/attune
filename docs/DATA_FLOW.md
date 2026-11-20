@@ -13,7 +13,8 @@ What leaves where, when, and under which consent. Update this table whenever a f
 | Insight AI note (numbers, medical and instruction sentences removed, ≤160 chars) | `src/insights/normalizer.js` | Companion / MCP as `note` | While < 90 s old | `aiSharing` |
 | Decoded metrics (pulse, expression, talking) | SDK → adapter | Interpreter, in memory only | While sensing is active | `sensing` |
 | Pulse BPM + signal tiles | Session | Human UI via `/api/state` (localhost, token) | While sensing is active | `sensing` |
-| Approved context `{state, say, directive, suggestedUtterance, confidence}` | Session | Companion reply / MCP `get_body_context` (via the connector API) | Per chat turn / per tool call | `aiSharing` (one setting in Attune for the companion and every connector) |
+| Approved context `{state, say, directive, suggestedUtterance, confidence}` | Session | Built-in companion reply | Per chat turn / per tool call | `aiSharing` (one setting in Attune for the companion and every connector) |
+| Approved action cue | Connector API | MCP client | Per approved context request | Only predefined cues and operational states leave this boundary. Measurements and free-text check-ins are excluded. |
 | Microphone recording of one turn | User microphone | Groq Whisper transcription API | After a pause or Send now in an active voice session | Start voice disclosure and microphone permission. Attune buffers audio in memory. End voice discards an unfinished recording. |
 | Voice transcript and companion reply | Whisper and the companion | Groq chat API for a reply, then Groq Orpheus for English playback | Per voice turn | Same session opt-in. Transcripts and replies appear in the conversation. No camera consent is required for voice. |
 | Chat message text + conversation history (last 20 turns, in memory only) | User | Groq API (`openai/gpt-oss-120b`), when `GROQ_API_KEY` is set | Per chat turn | Using the chat; disclosed under the chat box (demo mode: nothing leaves the device) |
@@ -47,8 +48,7 @@ and memory. MCP connectors (`src/server.js`, started by the AI app) are thin cli
   carrying an `Origin` (or `Sec-Fetch-Site`) header, so web pages can never call it. Routes: `GET status`,
   `GET purposes`, `POST context`, `POST correction`, `GET|POST memory`. There is no consent, approval or forget
   route — those stay in the person's UI.
-- What a connector receives is exactly what `get_body_context` returns: interpreted, number-free context (except
-  lens-allowed fields such as yoga's breathing rate), or a state such as `consent_required`, `purpose_not_approved`,
+- What a connector receives is exactly what `get_body_context` returns: a reviewed action cue without measurements, or a state such as `consent_required`, `purpose_not_approved`,
   `paused`, `starting`. If the service isn't running the connector answers `attune_not_running`.
 
 - **Claude Desktop:** after the person ticks an approval box on the Connectors page, Attune adds one `attune-sense`
@@ -59,8 +59,7 @@ and memory. MCP connectors (`src/server.js`, started by the AI app) are thin cli
   approvals are strict: ChatGPT gets no lens (not even companion) until the person allows it in Attune. Context then
   travels through OpenAI's tunnel to the ChatGPT workspace the tunnel is associated with.
 - **Lenses:** each app asks with a purpose (`get_body_context({ purpose })`) and reads through that lens only if the
-  person approved it for that app. Companion and casual share no numbers; yoga shares breathing rate and target pace
-  only (never heart numbers). Unknown or unapproved purposes never start the camera.
+  person approved it for that app. Every connector receives guidance only, including during yoga practice. Unknown or unapproved purposes never start the camera.
 
 | Data | Where | Contents |
 |---|---|---|

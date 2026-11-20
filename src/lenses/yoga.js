@@ -1,9 +1,5 @@
 'use strict';
-/*
- * Yoga & breathwork lens — breath pacing for a guided practice. Shares ONLY breathing numbers (current
- * breaths per minute and a target pace); never pulse, pulse delta, HRV or any heart number. Gentle, no
- * medical claims.
- */
+/* Local breath pacing. The connector boundary converts these results to fixed action cues. */
 
 const DEFAULT_TARGET = 6;      // breaths per minute, a common slow-breathing pace
 const MIN_TARGET = 4;
@@ -76,8 +72,8 @@ function render(snapshot, extras = {}) {
 module.exports = {
   id: 'yoga',
   name: 'Yoga & breathwork',
-  description: 'Paces your breathing during a practice. Shares your breaths per minute — never heart numbers.',
+  description: 'Offers gentle pacing cues during a breathing practice. Measurements stay in Attune.',
   needs: ['breathing'],
-  sharesNumbers: true,
+  sharesNumbers: false,
   render,
 };

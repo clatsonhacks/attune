@@ -261,7 +261,7 @@ The current MVP uses turn-based Groq Whisper ? companion ? Orpheus. It supports 
 each app for each purpose.
 
 - [x] `M8-01` Lens registry + companion lens (identical output to before) + neutral snapshot + lens-aware bridge reads.
-- [x] `M8-02` Yoga/breathwork lens (may share breathing rate and target pace only) and casual-chat lens.
+- [x] `M8-02` Yoga/breathwork lens (local pacing measurements, guidance-only connectors) and casual-chat lens.
 - [x] `M8-03` Per-app lens approvals stored locally; connector `get_body_context({ purpose })`, `list_purposes`;
   unapproved purposes are recorded as requests, never auto-approved.
 - [x] `M8-04` Local activity log (which app read which lens, when — no directives or numbers).

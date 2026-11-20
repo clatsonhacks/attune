@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 // One microphone turn at a time. Ending or interrupting a turn invalidates every pending callback.
 (() => {
@@ -175,7 +175,7 @@
     beginTurn();
   }
   mic.onchange = interrupt;
-  for (const button of document.querySelectorAll('.navitem, #newChat')) button.addEventListener('click', () => stop());
+  for (const button of document.querySelectorAll('.navitem, #newChat, #openSensing, #readInstruction, #homeToggle, #signals')) button.addEventListener('click', () => stop());
   $('chatForm').addEventListener('submit', () => stop());
   document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
   window.addEventListener('pagehide', () => stop());

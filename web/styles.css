@@ -461,3 +461,48 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 .turn-instruction { font-size:14px; margin-top:6px; }
 .turn-instruction summary { cursor:pointer; color:var(--muted); }
 .turn-instruction p { margin:5px 0 0; }
+
+/* Home fits the window. Longer sensor reports live in Sensing details. */
+body:has(#view-home:not([hidden])) { overflow:hidden; }
+.app:has(#view-home:not([hidden])) { height:100dvh; min-height:0; grid-template-rows:minmax(0,1fr); }
+.content:has(#view-home:not([hidden])) { display:grid; grid-template-rows:auto minmax(0,1fr); min-height:0; }
+#view-home, #view-home .stage { min-height:0; height:100%; }
+#view-home .stage { grid-template-rows:minmax(0,1fr); }
+#view-home .conversation { height:100%; min-width:0; }
+#homeSignals { width:100%; }
+#openSensing { margin:8px 0; }
+#homeToggle { display:none; }
+.sensing-info { display:grid; gap:10px; margin-top:16px; }
+#detailSignals .signals { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); }
+.vitals-instruction p { max-height:none; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+#readInstruction { float:right; margin:0 0 0 6px; }
+#view-home .orb-wrap { height:clamp(75px,14vh,145px); }
+#view-home .mascot .muse { height:clamp(72px,13vh,138px); }
+@media (max-height:760px) {
+  #view-home .presence { padding:12px; }
+  #view-home .orb-wrap, #view-home .mascot .muse { height:74px; }
+  #view-home .signals { margin-top:6px; gap:4px; }
+  #view-home .sig { height:44px; padding:4px 8px; }
+  #view-home .fineprint { margin-top:4px; font-size:12px; }
+}
+@media (max-width:1000px) {
+  .app:has(#view-home:not([hidden])) { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); gap:6px; padding:6px; }
+  .app:has(#view-home:not([hidden])) .sidebar { position:static; padding:5px; height:auto; }
+  .app:has(#view-home:not([hidden])) .side-brand, .app:has(#view-home:not([hidden])) .side-foot { display:none; }
+  .app:has(#view-home:not([hidden])) .nav { flex-direction:row; flex-wrap:wrap; justify-content:space-around; }
+  .app:has(#view-home:not([hidden])) .navitem { font-size:12px; gap:3px; padding:6px 3px; }
+  .app:has(#view-home:not([hidden])) .topbar { margin:0 0 5px; flex-wrap:wrap; }
+  .app:has(#view-home:not([hidden])) .htitle { font-size:19px; }
+  .app:has(#view-home:not([hidden])) #homeToggle { display:inline-block; }
+  #view-home .stage { grid-template-columns:minmax(0,1fr); gap:0; }
+  #view-home:not(.show-sensing) .presence, #view-home.show-sensing .conversation { display:none; }
+  #view-home .conversation { padding:10px; }
+  #view-home .conv-head { flex-wrap:wrap; gap:4px; }
+}
+@media (max-height:590px) {
+  #view-home .orb-wrap, #homeSignals, #view-home #policyNote { display:none; }
+  #view-home .conversation { padding:8px; }
+  #view-home .conv-head, #view-home .voice-bar, #view-home .hint { margin:2px 0; }
+}
+
+#view-home .composer input { min-width:0; }
